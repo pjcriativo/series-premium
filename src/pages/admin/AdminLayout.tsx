@@ -15,7 +15,6 @@ const navItems = [
   { to: "/admin/packages", icon: Coins, label: "Pacotes de Moedas" },
   { to: "/admin/banners", icon: Image, label: "Banners" },
   { to: "/me", icon: UserCircle, label: "Meu Perfil" },
-  { to: "/", icon: Globe, label: "Ver Site" },
 ];
 
 const NavItems = ({ onItemClick }: { onItemClick?: () => void }) => (
@@ -36,6 +35,16 @@ const NavItems = ({ onItemClick }: { onItemClick?: () => void }) => (
         {item.label}
       </NavLink>
     ))}
+    <a
+      href="/"
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={onItemClick}
+      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-muted-foreground hover:bg-secondary hover:text-foreground"
+    >
+      <Globe className="h-4 w-4" />
+      Ver Site
+    </a>
   </>
 );
 
