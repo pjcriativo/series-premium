@@ -1,87 +1,114 @@
 
 
-# Admin: CRUD de Series (Full-Page Forms)
+# Admin: CRUD de Episodios com Upload de Video
 
 ## Overview
 
-Replace the current dialog-based series form in `SeriesManager` with dedicated full-page form routes (`/admin/series/new` and `/admin/series/:id/edit`). The list page keeps search, pagination, and delete confirmation but links to the form pages instead of opening a modal.
+Transform the placeholder `EpisodeForm` into a full-page form (matching the `SeriesForm` pattern), and simplify `EpisodeManager` to be a list-only page that links to the form routes. Add upload progress tracking and duplicate `episode_number` validation.
 
 ## Changes
 
-### 1. `src/pages/admin/SeriesForm.tsx` (Rewrite)
+### 1. `src/pages/admin/EpisodeForm.tsx` (Rewrite)
 
-Build out the placeholder into a full form page with:
+Full form page for `/admin/episodes/new` and `/admin/episodes/:id/edit`:
 
-- **Back button** linking to `/admin/series`
-- **Title**: "Nova Serie" or "Editar Serie" based on URL param
-- **Fields**: title, slug (auto-generated from title), synopsis (textarea), category_id (select), cover upload (file input + current cover preview), total_episodes (number), free_episodes (number), is_published (switch)
-- **On edit**: fetch series by `id` param, populate form. Show current cover image if exists.
-- **Cover upload**: upload to `covers` bucket, same logic as current SeriesManager
-- **Auto total_episodes**: after save, query `episodes` table for `MAX(episode_number)` where `series_id = id` and update `total_episodes` if the count is higher than the manual value
-- **Save**: insert or update in `series` table, then redirect to `/admin/series` with a success toast
-- **Queries**: fetch categories for the select dropdown, fetch series data on edit
+**Fields:**
+- series_id (Select dropdown of all series)
+- episode_number (number input)
+- title (text)
+- duration_seconds (number)
+- is_free (Switch)
+- price_coins (number)
+- is_published (Switch)
+- video upload (file input, accept `.mp4,video/mp4`)
 
-### 2. `src/pages/admin/SeriesManager.tsx` (Update)
+**Upload with progress:**
+- Use `XMLHttpRequest` instead of `supabase.storage.upload()` to track upload progress
+- Show a `Progress` bar component during upload with percentage
+- Upload state: idle, uploading (with %), done, error
+- Save the storage path as `video_url` on the episode record
 
-- Remove the `Dialog` form (all form state, `saveMutation`, `uploadCover`, `openEdit`, `coverFile`)
-- Change "Nova Serie" button to a `Link` to `/admin/series/new`
-- Change edit button (pencil icon) to a `Link` to `/admin/series/:id/edit`
-- Keep: table, search, pagination, delete confirmation, delete mutation
+**Duplicate episode_number check:**
+- Before saving, query `episodes` where `series_id = form.series_id` AND `episode_number = form.episode_number` AND `id != editId`
+- If a match is found, show a toast error and abort save
 
-### 3. No Route Changes
+**On edit mode:**
+- Fetch episode by `id` param and populate the form
+- If `video_url` exists, show a "Video atual: filename" indicator
+- Allow re-uploading (replaces the old video_url)
 
-Routes `/admin/series/new` and `/admin/series/:id/edit` already exist in `App.tsx`.
+**After save:** redirect to `/admin/episodes` with success toast, invalidate queries.
 
-## Technical Details
+### 2. `src/pages/admin/EpisodeManager.tsx` (Update)
 
-### SeriesForm Implementation
+- Remove the `Dialog` form, all form state, `saveMutation`, `uploadVideo`, `openEdit`, `openCreate`, `videoFile`
+- Change "Novo Episodio" button to a `Link` to `/admin/episodes/new`
+- Change edit button (pencil) to a `Link` to `/admin/episodes/:id/edit`
+- Keep: series filter Select, table, search, pagination, delete confirmation, delete mutation
+
+### Technical Details
+
+**Upload with progress using XHR:**
 
 ```typescript
-// Load series on edit
-const { data: series } = useQuery({
-  queryKey: ["admin-series-detail", id],
-  queryFn: async () => {
-    const { data, error } = await supabase.from("series").select("*").eq("id", id).single();
-    if (error) throw error;
-    return data;
-  },
-  enabled: !!id,
-});
-
-// Populate form when series data loads
-useEffect(() => {
-  if (series) setForm({ ...series, category_id: series.category_id ?? "" });
-}, [series]);
-
-// After save, auto-update total_episodes
-const { data: maxEp } = await supabase
-  .from("episodes")
-  .select("episode_number")
-  .eq("series_id", savedId)
-  .order("episode_number", { ascending: false })
-  .limit(1)
-  .maybeSingle();
-
-if (maxEp && maxEp.episode_number > form.total_episodes) {
-  await supabase.from("series").update({ total_episodes: maxEp.episode_number }).eq("id", savedId);
-}
-
-// Redirect after save
-navigate("/admin/series");
+const uploadVideoWithProgress = (file: File, onProgress: (pct: number) => void): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const path = `${crypto.randomUUID()}.mp4`;
+    const url = `https://pnuydoujbrpfhohsxndz.supabase.co/storage/v1/object/videos/${path}`;
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(path) : reject(new Error("Upload failed"));
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.send(file);
+  });
+};
 ```
 
-### Cover Preview on Edit
+**Duplicate check:**
 
-When editing, if `form.cover_url` exists and no new file is selected, show a small thumbnail of the current cover above the file input.
+```typescript
+const { data: existing } = await supabase
+  .from("episodes")
+  .select("id")
+  .eq("series_id", form.series_id)
+  .eq("episode_number", form.episode_number)
+  .neq("id", editId ?? "00000000-0000-0000-0000-000000000000")
+  .maybeSingle();
+
+if (existing) {
+  toast({ title: "Erro", description: "Ja existe um episodio com esse numero nesta serie.", variant: "destructive" });
+  return;
+}
+```
+
+**Progress UI:**
+
+```typescript
+// State
+const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
+// In form, below file input
+{uploadProgress !== null && (
+  <div className="space-y-1">
+    <Progress value={uploadProgress} className="h-2" />
+    <p className="text-xs text-muted-foreground">{uploadProgress}%</p>
+  </div>
+)}
+```
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/pages/admin/SeriesForm.tsx` | Rewrite (full form page) |
-| `src/pages/admin/SeriesManager.tsx` | Update (remove dialog, use links) |
+| `src/pages/admin/EpisodeForm.tsx` | Rewrite (full form with video upload + progress) |
+| `src/pages/admin/EpisodeManager.tsx` | Update (remove dialog, use links) |
 
-## No Database Changes
+## No Database or Route Changes
 
-All tables and policies already exist.
+Routes `/admin/episodes/new` and `/admin/episodes/:id/edit` already exist in `App.tsx`. The `episodes` table and `videos` storage bucket already exist with correct RLS policies.
 
