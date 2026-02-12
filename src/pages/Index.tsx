@@ -57,7 +57,7 @@ const Index = () => {
       <main className="flex-1 pb-20">
         {isLoading ? (
           <div className="space-y-6 p-4">
-            <Skeleton className="w-full aspect-[16/9] md:aspect-[21/9] rounded-lg" />
+            <Skeleton className="w-full aspect-[16/7] md:aspect-[16/6] rounded-xl" />
             <Skeleton className="h-6 w-32" />
             <div className="flex gap-3">
               {[1, 2, 3].map((i) => (
