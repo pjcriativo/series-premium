@@ -21,7 +21,11 @@ const SeriesDetail = () => {
   const { data: series, isLoading: seriesLoading } = useQuery({
     queryKey: ["series", id],
     queryFn: async () => {
-      const { data, error } = await supabase.from("series").select("*").eq("id", id!).single();
+      const { data, error } = await supabase
+        .from("series")
+        .select("*, categories(name)")
+        .eq("id", id!)
+        .single();
       if (error) throw error;
       return data;
     },
@@ -42,11 +46,11 @@ const SeriesDetail = () => {
     enabled: !!id,
   });
 
-  const { data: unlocks } = useQuery({
-    queryKey: ["user-unlocks", id, user?.id],
+  const { data: episodeUnlocks } = useQuery({
+    queryKey: ["episode-unlocks", id, user?.id],
     queryFn: async () => {
       const { data } = await supabase
-        .from("user_unlocks")
+        .from("episode_unlocks")
         .select("episode_id")
         .eq("user_id", user!.id);
       return new Set((data ?? []).map((u) => u.episode_id));
@@ -54,20 +58,31 @@ const SeriesDetail = () => {
     enabled: !!user,
   });
 
-  const { data: profile } = useQuery({
-    queryKey: ["profile", user?.id],
+  const { data: seriesUnlocked } = useQuery({
+    queryKey: ["series-unlock", id, user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("coin_balance").eq("id", user!.id).single();
+      const { data } = await supabase
+        .from("series_unlocks")
+        .select("id")
+        .eq("user_id", user!.id)
+        .eq("series_id", id!)
+        .maybeSingle();
+      return !!data;
+    },
+    enabled: !!user && !!id,
+  });
+
+  const { data: wallet } = useQuery({
+    queryKey: ["wallet", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase.from("wallets").select("balance").eq("user_id", user!.id).single();
       return data;
     },
     enabled: !!user,
   });
 
   const handleUnlock = async (episodeId?: string, seriesId?: string) => {
-    if (!user) {
-      navigate("/auth");
-      return;
-    }
+    if (!user) { navigate("/auth"); return; }
     setUnlocking(episodeId ?? seriesId ?? "series");
     try {
       const { data, error } = await supabase.functions.invoke("unlock-episode", {
@@ -84,8 +99,9 @@ const SeriesDetail = () => {
         });
       } else {
         toast({ title: "Desbloqueado!", description: `${data.unlocked} episódio(s). Gasto: ${data.spent} moedas.` });
-        queryClient.invalidateQueries({ queryKey: ["user-unlocks"] });
-        queryClient.invalidateQueries({ queryKey: ["profile"] });
+        queryClient.invalidateQueries({ queryKey: ["episode-unlocks"] });
+        queryClient.invalidateQueries({ queryKey: ["series-unlock"] });
+        queryClient.invalidateQueries({ queryKey: ["wallet"] });
       }
     } catch (err: any) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });
@@ -94,14 +110,17 @@ const SeriesDetail = () => {
     }
   };
 
-  const isEpisodeAccessible = (ep: any) => ep.is_free || unlocks?.has(ep.id);
+  const isEpisodeAccessible = (ep: any) => {
+    if (ep.is_free) return true;
+    if (series && ep.episode_number <= series.free_episodes) return true;
+    if (seriesUnlocked) return true;
+    if (episodeUnlocks?.has(ep.id)) return true;
+    return false;
+  };
 
   const handleEpisodeClick = (ep: any) => {
     if (isEpisodeAccessible(ep)) {
-      if (!user && !ep.is_free) {
-        navigate("/auth");
-        return;
-      }
+      if (!user && !ep.is_free) { navigate("/auth"); return; }
       navigate(`/watch/${ep.id}`);
     } else {
       handleUnlock(ep.id);
@@ -109,6 +128,11 @@ const SeriesDetail = () => {
   };
 
   const isLoading = seriesLoading || episodesLoading;
+  const categoryName = (series as any)?.categories?.name;
+
+  // Calculate total cost for unlocking remaining episodes
+  const paidEpisodes = (episodes ?? []).filter((ep) => !ep.is_free && (!series || ep.episode_number > series.free_episodes));
+  const totalSeriesCost = paidEpisodes.reduce((sum, ep) => sum + ep.price_coins, 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -124,7 +148,6 @@ const SeriesDetail = () => {
           </div>
         ) : series ? (
           <>
-            {/* Cover Banner */}
             <div className="relative w-full aspect-video overflow-hidden">
               {(() => {
                 const cover = getSeriesCover(series.id, series.cover_url);
@@ -144,38 +167,37 @@ const SeriesDetail = () => {
               </Link>
             </div>
 
-            {/* Info */}
             <div className="px-4 -mt-8 relative z-10 space-y-3">
               <div className="flex items-center gap-2">
-                {series.genre && <Badge variant="secondary">{series.genre}</Badge>}
+                {categoryName && <Badge variant="secondary">{categoryName}</Badge>}
                 <span className="text-xs text-muted-foreground">{episodes?.length ?? 0} episódios</span>
-                {profile && (
+                {wallet && (
                   <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1">
-                    <Coins className="h-3 w-3" /> {profile.coin_balance}
+                    <Coins className="h-3 w-3" /> {wallet.balance}
                   </span>
                 )}
               </div>
               <h1 className="text-2xl font-black text-foreground">{series.title}</h1>
-              {series.description && (
-                <p className="text-sm text-muted-foreground leading-relaxed">{series.description}</p>
+              {series.synopsis && (
+                <p className="text-sm text-muted-foreground leading-relaxed">{series.synopsis}</p>
               )}
-              {series.total_coin_price > 0 && (
+              {totalSeriesCost > 0 && !seriesUnlocked && (
                 <Button
                   className="w-full gap-2 mt-2"
                   onClick={() => handleUnlock(undefined, id)}
                   disabled={unlocking === "series"}
                 >
                   <Coins className="h-4 w-4" />
-                  {unlocking === "series" ? "Desbloqueando..." : `Desbloquear Série — ${series.total_coin_price} moedas`}
+                  {unlocking === "series" ? "Desbloqueando..." : `Desbloquear Série — ${totalSeriesCost} moedas`}
                 </Button>
               )}
             </div>
 
-            {/* Episode List */}
             <div className="px-4 mt-6 pb-8 space-y-2">
               <h2 className="text-lg font-bold text-foreground mb-3">Episódios</h2>
               {episodes?.map((ep) => {
                 const accessible = isEpisodeAccessible(ep);
+                const isFreeByRule = ep.is_free || (series && ep.episode_number <= series.free_episodes);
                 return (
                   <button
                     key={ep.id}
@@ -195,14 +217,14 @@ const SeriesDetail = () => {
                         Ep. {ep.episode_number} — {ep.title}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {ep.is_free ? "Grátis" : accessible ? "Desbloqueado" : `${ep.coin_cost} moedas`}
+                        {isFreeByRule ? "Grátis" : accessible ? "Desbloqueado" : `${ep.price_coins} moedas`}
                         {ep.duration_seconds && ` · ${Math.floor(ep.duration_seconds / 60)}min`}
                       </p>
                     </div>
-                    {!accessible && !ep.is_free && (
+                    {!accessible && !isFreeByRule && (
                       <Badge variant="outline" className="flex-shrink-0 gap-1">
                         <Coins className="h-3 w-3" />
-                        {ep.coin_cost}
+                        {ep.price_coins}
                       </Badge>
                     )}
                   </button>

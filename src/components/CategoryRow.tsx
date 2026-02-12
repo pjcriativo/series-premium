@@ -1,9 +1,14 @@
 import SeriesCard from "@/components/SeriesCard";
-import { Tables } from "@/integrations/supabase/types";
 
 interface CategoryRowProps {
   title: string;
-  series: (Tables<"series"> & { episode_count?: number })[];
+  series: {
+    id: string;
+    title: string;
+    cover_url: string | null;
+    category_name?: string | null;
+    episode_count?: number;
+  }[];
 }
 
 const CategoryRow = ({ title, series }: CategoryRowProps) => {

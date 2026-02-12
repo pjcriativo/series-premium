@@ -9,10 +9,10 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 const Navbar = () => {
   const { user } = useAuth();
 
-  const { data: profile } = useQuery({
-    queryKey: ["profile", user?.id],
+  const { data: wallet } = useQuery({
+    queryKey: ["wallet", user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("profiles").select("coin_balance").eq("id", user!.id).single();
+      const { data } = await supabase.from("wallets").select("balance").eq("user_id", user!.id).single();
       return data;
     },
     enabled: !!user,
@@ -35,7 +35,7 @@ const Navbar = () => {
           <>
             <Link to="/coins" className="flex items-center gap-1 text-xs text-muted-foreground font-medium hover:text-foreground transition-colors">
               <Coins className="h-3.5 w-3.5 text-primary" />
-              {profile?.coin_balance ?? 0}
+              {wallet?.balance ?? 0}
             </Link>
             <Link to="/admin">
               <Avatar className="h-8 w-8 border border-primary/50">

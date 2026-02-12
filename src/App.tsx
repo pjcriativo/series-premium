@@ -16,6 +16,7 @@ import Dashboard from "./pages/admin/Dashboard";
 import SeriesManager from "./pages/admin/SeriesManager";
 import EpisodeManager from "./pages/admin/EpisodeManager";
 import UserManager from "./pages/admin/UserManager";
+import CategoryManager from "./pages/admin/CategoryManager";
 import CoinStore from "./pages/CoinStore";
 import NotFound from "./pages/NotFound";
 
@@ -39,15 +40,9 @@ const App = () => (
             <Route path="/coins" element={
               <ProtectedRoute><CoinStore /></ProtectedRoute>
             } />
-            <Route
-              path="/admin"
-              element={
-                <AdminRoute>
-                  <AdminLayout />
-                </AdminRoute>
-              }
-            >
+            <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<Dashboard />} />
+              <Route path="categories" element={<CategoryManager />} />
               <Route path="series" element={<SeriesManager />} />
               <Route path="episodes" element={<EpisodeManager />} />
               <Route path="users" element={<UserManager />} />

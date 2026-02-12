@@ -31,15 +31,17 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await supabaseUser.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseUser.auth.getUser();
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = user.id;
 
     const { episode_id, series_id } = await req.json();
 
@@ -51,23 +53,42 @@ Deno.serve(async (req) => {
     }
 
     // Determine episodes to unlock
-    let episodesToUnlock: { id: string; coin_cost: number; is_free: boolean }[] = [];
+    let episodesToUnlock: { id: string; price_coins: number; is_free: boolean; episode_number: number }[] = [];
+    let seriesFreeEpisodes = 0;
 
     if (series_id) {
+      // Get series info
+      const { data: seriesData } = await supabaseAdmin
+        .from("series")
+        .select("free_episodes")
+        .eq("id", series_id)
+        .single();
+      seriesFreeEpisodes = seriesData?.free_episodes ?? 0;
+
       const { data: eps, error } = await supabaseAdmin
         .from("episodes")
-        .select("id, coin_cost, is_free")
+        .select("id, price_coins, is_free, episode_number")
         .eq("series_id", series_id);
       if (error) throw error;
-      episodesToUnlock = eps.filter((e: any) => !e.is_free);
+      // Only charge for episodes that aren't free by any rule
+      episodesToUnlock = eps.filter((e: any) => !e.is_free && e.episode_number > seriesFreeEpisodes);
     } else {
       const { data: ep, error } = await supabaseAdmin
         .from("episodes")
-        .select("id, coin_cost, is_free, series_id")
+        .select("id, price_coins, is_free, series_id, episode_number")
         .eq("id", episode_id)
         .single();
       if (error) throw error;
-      if (ep.is_free) {
+
+      // Check free rules
+      const { data: seriesData } = await supabaseAdmin
+        .from("series")
+        .select("free_episodes")
+        .eq("id", ep.series_id)
+        .single();
+      seriesFreeEpisodes = seriesData?.free_episodes ?? 0;
+
+      if (ep.is_free || ep.episode_number <= seriesFreeEpisodes) {
         return new Response(
           JSON.stringify({ success: true, message: "Episode is free" }),
           { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -76,15 +97,32 @@ Deno.serve(async (req) => {
       episodesToUnlock = [ep];
     }
 
-    // Check already unlocked
+    // Check already unlocked (episode_unlocks)
     const epIds = episodesToUnlock.map((e) => e.id);
     const { data: existingUnlocks } = await supabaseAdmin
-      .from("user_unlocks")
+      .from("episode_unlocks")
       .select("episode_id")
       .eq("user_id", userId)
       .in("episode_id", epIds);
 
     const alreadyUnlocked = new Set((existingUnlocks ?? []).map((u: any) => u.episode_id));
+
+    // Also check series_unlocks
+    if (series_id) {
+      const { data: su } = await supabaseAdmin
+        .from("series_unlocks")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("series_id", series_id)
+        .maybeSingle();
+      if (su) {
+        return new Response(
+          JSON.stringify({ success: true, message: "Already unlocked" }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const toUnlock = episodesToUnlock.filter((e) => !alreadyUnlocked.has(e.id));
 
     if (toUnlock.length === 0) {
@@ -94,22 +132,22 @@ Deno.serve(async (req) => {
       );
     }
 
-    const totalCost = toUnlock.reduce((sum, e) => sum + e.coin_cost, 0);
+    const totalCost = toUnlock.reduce((sum, e) => sum + e.price_coins, 0);
 
-    // Get user balance
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("coin_balance")
-      .eq("id", userId)
+    // Get user wallet
+    const { data: wallet, error: walletError } = await supabaseAdmin
+      .from("wallets")
+      .select("balance")
+      .eq("user_id", userId)
       .single();
-    if (profileError) throw profileError;
+    if (walletError) throw walletError;
 
-    if (profile.coin_balance < totalCost) {
+    if (wallet.balance < totalCost) {
       return new Response(
         JSON.stringify({
           error: "Insufficient balance",
           required: totalCost,
-          current: profile.coin_balance,
+          current: wallet.balance,
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
@@ -117,39 +155,47 @@ Deno.serve(async (req) => {
 
     // Deduct balance
     const { error: updateError } = await supabaseAdmin
-      .from("profiles")
-      .update({ coin_balance: profile.coin_balance - totalCost })
-      .eq("id", userId);
+      .from("wallets")
+      .update({ balance: wallet.balance - totalCost })
+      .eq("user_id", userId);
     if (updateError) throw updateError;
 
     // Insert transaction
-    const { error: txError } = await supabaseAdmin.from("coin_transactions").insert({
+    const { error: txError } = await supabaseAdmin.from("transactions").insert({
       user_id: userId,
-      amount: totalCost,
-      type: "spend",
-      description: series_id
-        ? `Unlocked series`
-        : `Unlocked episode`,
+      type: "debit",
+      reason: series_id ? "series_unlock" : "episode_unlock",
+      coins: totalCost,
+      ref_id: series_id ?? episode_id,
     });
     if (txError) throw txError;
 
-    // Insert unlocks
-    const unlockRecords = toUnlock.map((e) => ({
-      user_id: userId,
-      episode_id: e.id,
-      series_id: series_id || null,
-    }));
-    const { error: unlockError } = await supabaseAdmin
-      .from("user_unlocks")
-      .insert(unlockRecords);
-    if (unlockError) throw unlockError;
+    if (series_id) {
+      // Insert series unlock
+      await supabaseAdmin.from("series_unlocks").insert({
+        user_id: userId,
+        series_id: series_id,
+      });
+      // Also insert individual episode unlocks
+      const unlockRecords = toUnlock.map((e) => ({
+        user_id: userId,
+        episode_id: e.id,
+      }));
+      await supabaseAdmin.from("episode_unlocks").insert(unlockRecords);
+    } else {
+      // Insert single episode unlock
+      await supabaseAdmin.from("episode_unlocks").insert({
+        user_id: userId,
+        episode_id: episode_id,
+      });
+    }
 
     return new Response(
       JSON.stringify({
         success: true,
         unlocked: toUnlock.length,
         spent: totalCost,
-        new_balance: profile.coin_balance - totalCost,
+        new_balance: wallet.balance - totalCost,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
