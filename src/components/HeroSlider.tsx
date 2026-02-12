@@ -40,9 +40,15 @@ const HeroSlider = ({ banners }: HeroSliderProps) => {
   if (!banners.length) return null;
 
   return (
-    <div className="w-full flex justify-center px-4 md:px-6 pt-4">
-      <div className="w-full max-w-7xl">
-        <section className="relative rounded-xl overflow-hidden shadow-2xl">
+    <div className="w-full relative pt-4">
+      {/* Fade lateral esquerdo */}
+      <div className="absolute left-0 top-0 bottom-0 w-[calc((100%-80rem)/2+2rem)] bg-gradient-to-r from-background to-transparent z-10 pointer-events-none hidden xl:block" />
+      {/* Fade lateral direito */}
+      <div className="absolute right-0 top-0 bottom-0 w-[calc((100%-80rem)/2+2rem)] bg-gradient-to-l from-background to-transparent z-10 pointer-events-none hidden xl:block" />
+
+      <div className="w-full flex justify-center px-4 md:px-6">
+        <div className="w-full max-w-7xl">
+          <section className="relative rounded-xl overflow-hidden shadow-2xl">
           <div ref={emblaRef} className="overflow-hidden">
             <div className="flex">
               {banners.map((banner) => (
@@ -118,6 +124,7 @@ const HeroSlider = ({ banners }: HeroSliderProps) => {
             </div>
           )}
         </section>
+        </div>
       </div>
     </div>
   );
