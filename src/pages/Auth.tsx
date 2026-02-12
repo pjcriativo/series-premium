@@ -28,7 +28,7 @@ const Auth = () => {
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { signIn, signUp, signInWithGoogle, resetPassword, updatePassword, user } = useAuth();
+  const { signIn, signUp, signInWithGoogle, resetPassword, updatePassword, user, isAdmin: isAdminFromHook } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -43,21 +43,29 @@ const Auth = () => {
   }, []);
 
   // Redirect if already logged in (except reset mode)
+  const { isAdmin } = useAuth();
   useEffect(() => {
     if (user && mode !== "reset") {
-      navigate("/", { replace: true });
+      navigate(isAdmin ? "/admin" : "/", { replace: true });
     }
-  }, [user, mode, navigate]);
+  }, [user, mode, navigate, isAdmin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       switch (mode) {
-        case "login":
+        case "login": {
           await signIn(email, password);
-          navigate("/");
+          // Check admin role to redirect accordingly
+          const { data: roleData } = await supabase
+            .from("user_roles")
+            .select("role")
+            .eq("role", "admin")
+            .maybeSingle();
+          navigate(roleData ? "/admin" : "/");
           break;
+        }
         case "register":
           await signUp(email, password, displayName);
           toast({

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { LayoutDashboard, Film, Tv, Users, LogOut, Coins, FolderTree, Menu, Image } from "lucide-react";
+import { LayoutDashboard, Film, Tv, Users, LogOut, Coins, FolderTree, Menu, Image, UserCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 
@@ -14,6 +14,7 @@ const navItems = [
   { to: "/admin/users", icon: Users, label: "Usuários" },
   { to: "/admin/packages", icon: Coins, label: "Pacotes de Moedas" },
   { to: "/admin/banners", icon: Image, label: "Banners" },
+  { to: "/me", icon: UserCircle, label: "Meu Perfil" },
 ];
 
 const NavItems = ({ onItemClick }: { onItemClick?: () => void }) => (
