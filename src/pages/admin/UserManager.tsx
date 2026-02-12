@@ -8,15 +8,18 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Coins, ShieldCheck, Search } from "lucide-react";
+import { Coins, ShieldCheck, Search, Receipt } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
 const UserManager = () => {
-  const [grantDialog, setGrantDialog] = useState<{ userId: string; name: string } | null>(null);
+  const [adjustDialog, setAdjustDialog] = useState<{ userId: string; name: string; balance: number } | null>(null);
+  const [adjustMode, setAdjustMode] = useState<"credit" | "debit">("credit");
   const [coinAmount, setCoinAmount] = useState(100);
   const [adminToggle, setAdminToggle] = useState<{ userId: string; isAdmin: boolean; name: string } | null>(null);
+  const [txDialog, setTxDialog] = useState<{ userId: string; name: string } | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const queryClient = useQueryClient();
@@ -36,16 +39,35 @@ const UserManager = () => {
     },
   });
 
+  const { data: transactions } = useQuery({
+    queryKey: ["admin-user-transactions", txDialog?.userId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", txDialog!.userId)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!txDialog,
+  });
+
   const filtered = (users ?? []).filter(u => (u.display_name || "").toLowerCase().includes(search.toLowerCase()));
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  const grantCoinsMutation = useMutation({
+  const adjustCoinsMutation = useMutation({
     mutationFn: async ({ userId, amount }: { userId: string; amount: number }) => {
       const { data, error } = await supabase.functions.invoke("buy-coins", { body: { admin_grant: true, target_user_id: userId, coins: amount } });
       if (error) throw error; if (data?.error) throw new Error(data.error);
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin-users"] }); setGrantDialog(null); toast({ title: "Moedas concedidas!" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      setAdjustDialog(null);
+      toast({ title: "Saldo ajustado!" });
+    },
     onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
@@ -58,6 +80,19 @@ const UserManager = () => {
     onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
   });
 
+  const handleAdjustSubmit = () => {
+    if (!adjustDialog || coinAmount <= 0) return;
+    const finalCoins = adjustMode === "credit" ? coinAmount : -coinAmount;
+    adjustCoinsMutation.mutate({ userId: adjustDialog.userId, amount: finalCoins });
+  };
+
+  const reasonLabels: Record<string, string> = {
+    purchase: "Compra",
+    episode_unlock: "Desbloqueio ep.",
+    series_unlock: "Desbloqueio série",
+    admin_adjust: "Ajuste admin",
+  };
+
   return (
     <div>
       <h1 className="mb-6 text-3xl font-bold text-foreground">Usuários</h1>
@@ -69,7 +104,7 @@ const UserManager = () => {
 
       <div className="rounded-lg border border-border">
         <Table>
-          <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Moedas</TableHead><TableHead>Papéis</TableHead><TableHead>Criado em</TableHead><TableHead className="w-32">Ações</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Moedas</TableHead><TableHead>Papéis</TableHead><TableHead>Criado em</TableHead><TableHead className="w-40">Ações</TableHead></TableRow></TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
@@ -84,7 +119,12 @@ const UserManager = () => {
                   <TableCell className="text-muted-foreground">{new Date(u.created_at).toLocaleDateString("pt-BR")}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" title="Conceder moedas" onClick={() => setGrantDialog({ userId: u.id, name: u.display_name || "Usuário" })}><Coins className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" title="Ajustar moedas" onClick={() => { setAdjustDialog({ userId: u.id, name: u.display_name || "Usuário", balance: u.balance }); setAdjustMode("credit"); setCoinAmount(100); }}>
+                        <Coins className="h-4 w-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" title="Transações" onClick={() => setTxDialog({ userId: u.id, name: u.display_name || "Usuário" })}>
+                        <Receipt className="h-4 w-4" />
+                      </Button>
                       <Button variant="ghost" size="icon" title={u.roles.includes("admin") ? "Remover admin" : "Tornar admin"} onClick={() => setAdminToggle({ userId: u.id, isAdmin: u.roles.includes("admin"), name: u.display_name || "Usuário" })}>
                         <ShieldCheck className={`h-4 w-4 ${u.roles.includes("admin") ? "text-primary" : ""}`} />
                       </Button>
@@ -105,18 +145,69 @@ const UserManager = () => {
         </div>
       )}
 
-      <Dialog open={!!grantDialog} onOpenChange={() => setGrantDialog(null)}>
+      {/* Adjust Coins Dialog */}
+      <Dialog open={!!adjustDialog} onOpenChange={() => setAdjustDialog(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Conceder moedas para {grantDialog?.name}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>Ajustar moedas — {adjustDialog?.name}</DialogTitle></DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2"><Label>Quantidade</Label><Input type="number" value={coinAmount} onChange={(e) => setCoinAmount(parseInt(e.target.value) || 0)} min={1} /></div>
-            <Button className="w-full" onClick={() => grantDialog && grantCoinsMutation.mutate({ userId: grantDialog.userId, amount: coinAmount })} disabled={grantCoinsMutation.isPending}>
-              {grantCoinsMutation.isPending ? "Concedendo..." : `Conceder ${coinAmount} moedas`}
+            <p className="text-sm text-muted-foreground">Saldo atual: <span className="font-semibold text-foreground">{adjustDialog?.balance} 🪙</span></p>
+            <div className="space-y-2">
+              <Label>Operação</Label>
+              <Select value={adjustMode} onValueChange={(v) => setAdjustMode(v as "credit" | "debit")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="credit">Creditar</SelectItem>
+                  <SelectItem value="debit">Debitar</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Quantidade</Label>
+              <Input type="number" value={coinAmount} onChange={(e) => setCoinAmount(parseInt(e.target.value) || 0)} min={1} />
+            </div>
+            <Button className="w-full" onClick={handleAdjustSubmit} disabled={adjustCoinsMutation.isPending || coinAmount <= 0}>
+              {adjustCoinsMutation.isPending ? "Processando..." : `${adjustMode === "credit" ? "Creditar" : "Debitar"} ${coinAmount} moedas`}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
+      {/* Transaction History Dialog */}
+      <Dialog open={!!txDialog} onOpenChange={() => setTxDialog(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Transações — {txDialog?.name}</DialogTitle></DialogHeader>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Data</TableHead>
+                <TableHead>Tipo</TableHead>
+                <TableHead>Motivo</TableHead>
+                <TableHead>Moedas</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!transactions || transactions.length === 0 ? (
+                <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground">Nenhuma transação</TableCell></TableRow>
+              ) : (
+                transactions.map((tx) => (
+                  <TableRow key={tx.id}>
+                    <TableCell className="text-muted-foreground">{new Date(tx.created_at).toLocaleString("pt-BR")}</TableCell>
+                    <TableCell>
+                      <Badge variant={tx.type === "credit" ? "default" : "destructive"}>
+                        {tx.type === "credit" ? "Crédito" : "Débito"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{reasonLabels[tx.reason] || tx.reason}</TableCell>
+                    <TableCell>{tx.coins} 🪙</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </DialogContent>
+      </Dialog>
+
+      {/* Admin Toggle Confirmation */}
       <AlertDialog open={!!adminToggle} onOpenChange={() => setAdminToggle(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
