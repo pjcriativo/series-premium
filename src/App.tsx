@@ -8,6 +8,8 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import SeriesDetail from "./pages/SeriesDetail";
+import SearchPage from "./pages/Search";
 import AdminLayout from "./pages/admin/AdminLayout";
 import Dashboard from "./pages/admin/Dashboard";
 import SeriesManager from "./pages/admin/SeriesManager";
@@ -27,6 +29,8 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
             <Route path="/" element={<Index />} />
+            <Route path="/series/:id" element={<SeriesDetail />} />
+            <Route path="/search" element={<SearchPage />} />
             <Route
               path="/admin"
               element={
