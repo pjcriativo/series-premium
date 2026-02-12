@@ -43,9 +43,9 @@ const HeroSlider = ({ banners }: HeroSliderProps) => {
     <div className="w-full relative pt-4">
       <section className="relative overflow-hidden">
         {/* Fade lateral esquerdo */}
-        <div className="absolute left-0 inset-y-0 w-16 md:w-32 lg:w-48 bg-gradient-to-r from-background to-transparent z-10 pointer-events-none" />
+        <div className="absolute left-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80 bg-gradient-to-r from-background via-background/50 to-transparent z-10 pointer-events-none" />
         {/* Fade lateral direito */}
-        <div className="absolute right-0 inset-y-0 w-16 md:w-32 lg:w-48 bg-gradient-to-l from-background to-transparent z-10 pointer-events-none" />
+        <div className="absolute right-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80 bg-gradient-to-l from-background via-background/50 to-transparent z-10 pointer-events-none" />
 
         <div ref={emblaRef} className="overflow-hidden">
           <div className="flex">
