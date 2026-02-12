@@ -19,7 +19,7 @@ const Navbar = () => {
   });
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-background/80 backdrop-blur-md border-b border-border">
+    <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-4 py-3 bg-transparent">
       <Link to="/" className="text-xl font-black tracking-tight text-primary">
         ReelShort
       </Link>
