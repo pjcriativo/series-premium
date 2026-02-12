@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { ArrowLeft, Play, Lock, Coins, Unlock } from "lucide-react";
+import { getSeriesCover } from "@/lib/demo-covers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -125,13 +126,16 @@ const SeriesDetail = () => {
           <>
             {/* Cover Banner */}
             <div className="relative w-full aspect-video overflow-hidden">
-              {series.cover_url ? (
-                <img src={series.cover_url} alt={series.title} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full bg-secondary flex items-center justify-center">
-                  <span className="text-4xl font-bold text-muted-foreground">{series.title.charAt(0)}</span>
-                </div>
-              )}
+              {(() => {
+                const cover = getSeriesCover(series.id, series.cover_url);
+                return cover ? (
+                  <img src={cover} alt={series.title} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="w-full h-full bg-secondary flex items-center justify-center">
+                    <span className="text-4xl font-bold text-muted-foreground">{series.title.charAt(0)}</span>
+                  </div>
+                );
+              })()}
               <div className="absolute inset-0 bg-gradient-to-t from-background via-background/30 to-transparent" />
               <Link to="/" className="absolute top-4 left-4">
                 <Button variant="ghost" size="icon" className="bg-background/50 backdrop-blur-sm text-foreground">
