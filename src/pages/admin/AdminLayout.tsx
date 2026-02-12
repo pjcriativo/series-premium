@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import AdminBreadcrumb from "@/components/AdminBreadcrumb";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { LayoutDashboard, Film, Tv, Users, LogOut, Coins, FolderTree, Menu, Image, UserCircle, Globe } from "lucide-react";
@@ -78,7 +79,7 @@ const AdminLayout = () => {
           </Sheet>
           <span className="text-lg font-bold text-foreground">Admin Panel</span>
         </header>
-        <main className="p-4"><Outlet /></main>
+        <main className="p-4"><AdminBreadcrumb /><Outlet /></main>
       </div>
     );
   }
@@ -99,7 +100,7 @@ const AdminLayout = () => {
           </Button>
         </div>
       </aside>
-      <main className="ml-64 flex-1 p-8"><Outlet /></main>
+      <main className="ml-64 flex-1 p-8"><AdminBreadcrumb /><Outlet /></main>
     </div>
   );
 };
