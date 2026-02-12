@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation, Link } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -132,7 +132,7 @@ const Auth = () => {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,hsl(var(--primary)/0.15),transparent_70%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,hsl(var(--primary)/0.1),transparent_60%)]" />
 
-        <div className="relative z-10 px-12 max-w-md text-center space-y-6">
+        <Link to="/" className="relative z-10 px-12 max-w-md text-center space-y-6 block">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/30">
             <Film className="h-10 w-10 text-primary-foreground" />
           </div>
@@ -151,18 +151,18 @@ const Auth = () => {
               />
             ))}
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Right panel — form */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-8 lg:w-1/2">
         {/* Mobile branding header */}
-        <div className="lg:hidden mb-8 text-center space-y-3">
+        <Link to="/" className="lg:hidden mb-8 text-center space-y-3 block">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary shadow-md shadow-primary/25">
             <Film className="h-7 w-7 text-primary-foreground" />
           </div>
           <h2 className="text-2xl font-black text-foreground">ReelShort</h2>
-        </div>
+        </Link>
 
         <Card className="w-full max-w-md border-border bg-card">
           <CardHeader className="text-center pb-4">
