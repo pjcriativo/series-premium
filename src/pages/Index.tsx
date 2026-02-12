@@ -1,6 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { getSeriesCover } from "@/lib/demo-covers";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
 import HeroSlider from "@/components/HeroSlider";
@@ -8,6 +11,22 @@ import CategoryRow from "@/components/CategoryRow";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const Index = () => {
+  const { user } = useAuth();
+
+  const { data: continueWatching } = useQuery({
+    queryKey: ["continue-watching", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("user_progress")
+        .select("series_id, last_episode_number, series:series_id(id, title, cover_url)")
+        .eq("user_id", user!.id)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const { data: seriesList, isLoading: loadingSeries } = useQuery({
     queryKey: ["browse-series"],
     queryFn: async () => {
@@ -68,6 +87,49 @@ const Index = () => {
         ) : (
           <>
             {banners && banners.length > 0 && <HeroSlider banners={banners as any} />}
+
+            {user && continueWatching && continueWatching.length > 0 && (
+              <div className="mt-6 w-full flex justify-center px-4 md:px-6">
+                <div className="w-full max-w-7xl">
+                  <section className="mb-8">
+                    <h2 className="text-lg font-bold text-foreground mb-3 px-4">Continue Assistindo</h2>
+                    <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory scrollbar-hide">
+                      {continueWatching.map((item: any) => {
+                        const cover = getSeriesCover(item.series.id, item.series.cover_url);
+                        return (
+                          <Link
+                            key={item.series_id}
+                            to={`/series/${item.series.id}`}
+                            className="group flex-shrink-0 w-36 md:w-44 snap-start"
+                          >
+                            <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-2">
+                              {cover ? (
+                                <img
+                                  src={cover}
+                                  alt={item.series.title}
+                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-secondary">
+                                  <span className="text-muted-foreground text-3xl font-bold">
+                                    {item.series.title.charAt(0)}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
+                                Ep. {item.last_episode_number}
+                              </div>
+                            </div>
+                            <h3 className="text-sm font-medium text-foreground truncate">{item.series.title}</h3>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            )}
 
             <div className="mt-6 space-y-2 w-full flex justify-center px-4 md:px-6">
               <div className="w-full max-w-7xl">
