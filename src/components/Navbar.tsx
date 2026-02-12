@@ -33,11 +33,11 @@ const Navbar = () => {
 
         {user ? (
           <>
-            <Link to="/coins" className="flex items-center gap-1 text-xs text-muted-foreground font-medium hover:text-foreground transition-colors">
+            <Link to="/wallet" className="flex items-center gap-1 text-xs text-muted-foreground font-medium hover:text-foreground transition-colors">
               <Coins className="h-3.5 w-3.5 text-primary" />
               {wallet?.balance ?? 0}
             </Link>
-            <Link to="/admin">
+            <Link to="/me">
               <Avatar className="h-8 w-8 border border-primary/50">
                 <AvatarFallback className="bg-primary/20 text-primary text-xs">
                   {user.email?.charAt(0).toUpperCase() ?? "U"}

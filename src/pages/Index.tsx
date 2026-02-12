@@ -4,6 +4,7 @@ import Navbar from "@/components/Navbar";
 import HeroBanner from "@/components/HeroBanner";
 import CategoryRow from "@/components/CategoryRow";
 import { Skeleton } from "@/components/ui/skeleton";
+import BottomNav from "@/components/BottomNav";
 
 const Index = () => {
   const { data: allSeries, isLoading } = useQuery({
@@ -46,7 +47,7 @@ const Index = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pt-14">
+      <main className="pt-14 pb-16 md:pb-0">
         {isLoading ? (
           <div className="px-4 pt-4 space-y-6">
             <Skeleton className="w-full aspect-[16/9] rounded-lg" />
@@ -82,6 +83,7 @@ const Index = () => {
           </>
         )}
       </main>
+      <BottomNav />
     </div>
   );
 };

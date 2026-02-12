@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -12,10 +12,15 @@ import { Film, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from "lucide-react";
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
 const Auth = () => {
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState<AuthMode>(() => {
     const m = searchParams.get("mode");
-    return m === "reset" ? "reset" : "login";
+    if (m === "reset") return "reset";
+    if (location.pathname === "/signup") return "register";
+    if (location.pathname === "/forgot") return "forgot";
+    if (location.pathname === "/reset-password") return "reset";
+    return "login";
   });
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

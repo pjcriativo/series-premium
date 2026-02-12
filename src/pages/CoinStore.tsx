@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
 import Navbar from "@/components/Navbar";
+import BottomNav from "@/components/BottomNav";
 
 const iconMap: Record<string, any> = {
   Starter: Zap,
@@ -124,6 +125,7 @@ const CoinStore = () => {
 
         <p className="text-xs text-muted-foreground text-center mt-6">As moedas são creditadas instantaneamente na sua conta.</p>
       </main>
+      <BottomNav />
     </div>
   );
 };
