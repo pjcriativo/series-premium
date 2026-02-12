@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Pencil, Trash2, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Sparkles, Image as ImageIcon } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
@@ -16,6 +17,8 @@ const SeriesManager = () => {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState("");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -39,13 +42,105 @@ const SeriesManager = () => {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["admin-series"] }); toast({ title: "Série removida" }); },
   });
 
+  const handleGenerateAll = async () => {
+    setGenerating(true);
+    setGenProgress("Gerando capas para todas as séries...");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/generate-covers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ type: "covers" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao gerar capas");
+      const ok = data.results?.filter((r: any) => r.status === "ok").length ?? 0;
+      const fail = data.results?.filter((r: any) => r.status !== "ok").length ?? 0;
+      toast({ title: `Capas geradas: ${ok} ok, ${fail} erros` });
+      queryClient.invalidateQueries({ queryKey: ["admin-series"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+      setGenProgress("");
+    }
+  };
+
+  const handleGenerateSingle = async (seriesId: string, title: string) => {
+    setGenerating(true);
+    setGenProgress(`Gerando capa para "${title}"...`);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/generate-covers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ type: "covers", series_id: seriesId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao gerar capa");
+      toast({ title: `Capa gerada para "${title}"` });
+      queryClient.invalidateQueries({ queryKey: ["admin-series"] });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+      setGenProgress("");
+    }
+  };
+
+  const handleGenerateBanners = async () => {
+    setGenerating(true);
+    setGenProgress("Gerando imagens dos banners...");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/generate-covers`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({ type: "banners" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao gerar banners");
+      const ok = data.results?.filter((r: any) => r.status === "ok").length ?? 0;
+      toast({ title: `Banners gerados: ${ok}` });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message, variant: "destructive" });
+    } finally {
+      setGenerating(false);
+      setGenProgress("");
+    }
+  };
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-foreground">Séries</h1>
-        <Link to="/admin/series/new">
-          <Button><Plus className="mr-2 h-4 w-4" /> Nova Série</Button>
-        </Link>
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-foreground">Séries</h1>
+          <Link to="/admin/series/new">
+            <Button><Plus className="mr-2 h-4 w-4" /> Nova Série</Button>
+          </Link>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={handleGenerateAll} disabled={generating}>
+            <Sparkles className="mr-2 h-4 w-4" /> Gerar Capas (Todas)
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleGenerateBanners} disabled={generating}>
+            <ImageIcon className="mr-2 h-4 w-4" /> Gerar Banners
+          </Button>
+        </div>
+        {generating && (
+          <div className="space-y-1">
+            <p className="text-sm text-muted-foreground">{genProgress}</p>
+            <Progress className="h-2" />
+          </div>
+        )}
       </div>
 
       <div className="mb-4 relative">
@@ -70,6 +165,9 @@ const SeriesManager = () => {
                   <TableCell>{s.free_episodes}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => handleGenerateSingle(s.id, s.title)} disabled={generating} title="Gerar capa IA">
+                        <Sparkles className="h-4 w-4" />
+                      </Button>
                       <Link to={`/admin/series/${s.id}/edit`}>
                         <Button variant="ghost" size="icon"><Pencil className="h-4 w-4" /></Button>
                       </Link>
