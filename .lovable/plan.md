@@ -1,152 +1,161 @@
 
 
-# Enhanced User Profile Page (/me)
+# Admin Panel Enhancement
 
 ## Overview
 
-Transform the current simple Profile page into a rich user area with auto-unlock toggle, continue watching, watched series, transaction history, and logout.
+Upgrade the admin panel with a responsive layout (sidebar on desktop, drawer on mobile), add a "Pacotes de Moedas" (Coin Packages) management section, and add search + pagination + delete confirmation modals to all admin tables.
 
-## Current State
+## What Exists
 
-The Profile page currently shows: avatar, name, email, wallet link, purchases link, admin link, and logout button. It's a simple menu-style page.
+- **AdminRoute**: Already guards based on `isAdmin` from `useAuth` (checks `user_roles` table). No changes needed.
+- **AdminLayout**: Desktop-only fixed sidebar with nav items. No mobile support.
+- **Manager pages**: SeriesManager, EpisodeManager, UserManager, CategoryManager -- all have tables but no search, no pagination, and delete buttons fire immediately without confirmation.
+- **Missing**: Coin Packages manager (the `coin_packages` table exists but has no admin CRUD page).
+- **Routes**: Already wired in `App.tsx` under `/admin`.
 
-## Planned Sections (top to bottom)
+## Changes
 
-1. **Header** -- Avatar, display name, email (already exists, keep as-is)
-2. **Auto-unlock toggle** -- Switch for `profile.auto_unlock`, updates the `profiles` table on toggle
-3. **Wallet row** -- Quick link to `/wallet` with balance (already exists, keep)
-4. **Continuar Assistindo** -- Horizontal scroll of series cards based on `user_progress`, each card shows series cover + "Ep. X" badge, links to `/watch/:episodeId` for the last watched episode
-5. **Series Assistidas** -- Horizontal scroll of all series where the user has progress records, linking to `/series/:id`
-6. **Historico** -- Last 20 transactions displayed as a list with type icon (credit/debit), reason, coins, and date
-7. **Admin link** -- If admin role (keep existing)
-8. **Logout button** -- (keep existing)
+### 1. `src/pages/admin/AdminLayout.tsx` (Rewrite)
+
+**Desktop**: Keep the fixed sidebar (current behavior).
+
+**Mobile**: Replace fixed sidebar with a `Sheet` (slide-in drawer) triggered by a hamburger button in a top bar.
+
+- Use `useIsMobile()` hook to detect viewport
+- Desktop: render the sidebar as-is (fixed left, 256px wide)
+- Mobile: render a top bar with hamburger + "Admin Panel" title, and a `Sheet` from the left containing the same nav items
+- Nav items list stays the same but adds the new "Pacotes de Moedas" entry
+- Clicking a nav item on mobile closes the drawer
+
+**New nav item added:**
+```typescript
+{ to: "/admin/packages", icon: Coins, label: "Pacotes de Moedas" }
+```
+
+### 2. New File: `src/pages/admin/CoinPackageManager.tsx`
+
+Full CRUD manager for coin packages, following the same pattern as CategoryManager:
+
+- Table with columns: Title, Coins, Price (BRL), Stripe Price ID, Active, Actions
+- Dialog form for create/edit with fields: title, coins, price_cents, stripe_price_id, is_active
+- Delete with confirmation (using AlertDialog)
+- Search input to filter by title
+- Pagination (10 items per page)
+
+### 3. Update All Manager Pages with Search, Pagination, and Delete Confirmation
+
+Each manager page gets three enhancements:
+
+**Search**: An `Input` field above the table that filters rows client-side by the main text column (title/name/display_name).
+
+**Pagination**: Simple previous/next buttons below the table. 10 items per page. Shows "Page X of Y".
+
+**Delete Confirmation**: Replace direct `deleteMutation.mutate(id)` calls with an `AlertDialog` that asks "Tem certeza que deseja excluir?" before proceeding. This applies to:
+- `SeriesManager.tsx`
+- `EpisodeManager.tsx`
+- `UserManager.tsx` (no delete, but the admin toggle gets a confirmation)
+- `CategoryManager.tsx`
+- `CoinPackageManager.tsx` (new)
+
+### 4. `src/App.tsx`
+
+Add the new route:
+```typescript
+<Route path="packages" element={<CoinPackageManager />} />
+```
 
 ## Technical Details
 
-### File Modified: `src/pages/Profile.tsx` (rewrite)
+### Responsive Layout Pattern
 
-**New queries added:**
-
-1. **User progress with series data:**
 ```typescript
-const { data: progressList } = useQuery({
-  queryKey: ["user-progress-all", user?.id],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from("user_progress")
-      .select("series_id, last_episode_number, last_position_seconds, updated_at")
-      .order("updated_at", { ascending: false });
-    return data;
-  },
-  enabled: !!user,
-});
+// AdminLayout.tsx
+const isMobile = useIsMobile();
+const [drawerOpen, setDrawerOpen] = useState(false);
+
+// Shared nav list component
+const NavItems = ({ onItemClick }) => (
+  navItems.map(item => (
+    <NavLink to={item.to} end={item.end} onClick={onItemClick} ...>
+      <item.icon /> {item.label}
+    </NavLink>
+  ))
+);
+
+// Desktop: <aside className="fixed w-64 ..."><NavItems /></aside>
+// Mobile: <Sheet open={drawerOpen}><SheetContent side="left"><NavItems onItemClick={() => setDrawerOpen(false)} /></SheetContent></Sheet>
 ```
 
-2. **Series details for progress items:**
+### Reusable Delete Confirmation Pattern
+
+Each manager will use `AlertDialog` inline:
+
 ```typescript
-// Fetch series info for all progress entries
-const { data: watchedSeries } = useQuery({
-  queryKey: ["watched-series", seriesIds],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from("series")
-      .select("id, title, cover_url, slug, total_episodes")
-      .in("id", seriesIds);
-    return data;
-  },
-  enabled: seriesIds.length > 0,
-});
+const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+
+// In table row:
+<Button onClick={() => setDeleteTarget(item.id)}>
+  <Trash2 />
+</Button>
+
+// At component bottom:
+<AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Confirmar exclusao</AlertDialogTitle>
+      <AlertDialogDescription>Esta acao nao pode ser desfeita.</AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+      <AlertDialogAction onClick={() => { deleteMutation.mutate(deleteTarget!); setDeleteTarget(null); }}>
+        Excluir
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
 ```
 
-3. **Episodes for "continue watching" (to get episode IDs for navigation):**
+### Search + Pagination Pattern
+
 ```typescript
-// For each progress entry, find the episode matching last_episode_number
-const { data: continueEpisodes } = useQuery({
-  queryKey: ["continue-episodes", progressList],
-  queryFn: async () => {
-    // Batch query: get episodes matching series_id + episode_number pairs
-    const promises = progressList.map(p =>
-      supabase.from("episodes")
-        .select("id, title, episode_number, series_id")
-        .eq("series_id", p.series_id)
-        .eq("episode_number", p.last_episode_number)
-        .maybeSingle()
-    );
-    const results = await Promise.all(promises);
-    return results.map(r => r.data).filter(Boolean);
-  },
-  enabled: !!progressList?.length,
-});
+const [search, setSearch] = useState("");
+const [page, setPage] = useState(0);
+const PAGE_SIZE = 10;
+
+const filtered = (items ?? []).filter(i =>
+  i.title.toLowerCase().includes(search.toLowerCase())
+);
+const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+// Reset page when search changes
+useEffect(() => setPage(0), [search]);
 ```
 
-4. **Recent transactions:**
-```typescript
-const { data: transactions } = useQuery({
-  queryKey: ["transactions", user?.id],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from("transactions")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(20);
-    return data;
-  },
-  enabled: !!user,
-});
-```
+### CoinPackageManager Form Fields
 
-**Auto-unlock toggle:**
-```typescript
-const handleAutoUnlockToggle = async (checked: boolean) => {
-  await supabase.from("profiles").update({ auto_unlock: checked }).eq("id", user.id);
-  // Refresh profile in auth context
-};
-```
-The `useAuth` hook's `fetchProfile` is not exposed, so after updating, we invalidate and also optimistically update the local profile state. Since `profile` comes from the auth context, we can call `fetchProfile` if we expose it, or simply reload. The simplest approach: add a `refreshProfile` method to the auth context, or just update the profiles table and show a toast -- the auth context will pick it up on next mount.
-
-**Better approach**: Expose `refreshProfile` from `useAuth` by adding it to the context value. This is a small change to `src/hooks/useAuth.tsx`.
-
-### File Modified: `src/hooks/useAuth.tsx`
-
-Add `refreshProfile` to the context:
-- Extract `fetchProfile` so it can be called externally
-- Add `refreshProfile: () => Promise<void>` to `AuthContextType`
-- Include it in the provider value
-
-### UI Components Used
-
-- `Switch` from `@/components/ui/switch` for auto-unlock toggle
-- `SeriesCard` or inline card component for continue watching / watched series (horizontal scroll)
-- `Card` for transaction history items
-- Existing `Avatar`, `Button`, `Link` components
-
-### Section: "Continuar Assistindo"
-
-Each item is a small card showing:
-- Series cover image (2:3 aspect ratio, same as SeriesCard)
-- Series title
-- Badge overlay: "Ep. {N}"
-- Click navigates to `/watch/:episodeId`
-
-### Section: "Series Assistidas"
-
-Reuses the same horizontal scroll pattern but links to `/series/:id` instead of the player.
-
-### Section: "Historico"
-
-Each transaction row shows:
-- Icon: green arrow up for credit, red arrow down for debit
-- Reason label mapped from enum (purchase -> "Compra de moedas", episode_unlock -> "Desbloqueio de episodio", series_unlock -> "Desbloqueio de serie", admin_adjust -> "Ajuste admin")
-- Coins amount with +/- prefix
-- Relative date (using `date-fns` formatDistanceToNow)
+| Field | Type | Notes |
+|-------|------|-------|
+| title | text | Required |
+| coins | number | Required, min 1 |
+| price_cents | number | Required, displayed as BRL |
+| stripe_price_id | text | Optional |
+| is_active | switch | Default true |
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/pages/Profile.tsx` | Rewrite with new sections |
-| `src/hooks/useAuth.tsx` | Add `refreshProfile` to context |
+| `src/pages/admin/AdminLayout.tsx` | Rewrite (add mobile drawer + new nav item) |
+| `src/pages/admin/CoinPackageManager.tsx` | Create (new CRUD page) |
+| `src/pages/admin/SeriesManager.tsx` | Update (add search, pagination, delete confirm) |
+| `src/pages/admin/EpisodeManager.tsx` | Update (add search, pagination, delete confirm) |
+| `src/pages/admin/UserManager.tsx` | Update (add search, pagination, admin toggle confirm) |
+| `src/pages/admin/CategoryManager.tsx` | Update (add search, pagination, delete confirm) |
+| `src/App.tsx` | Update (add packages route) |
 
-## No Database Changes
+## No Database or Edge Function Changes
 
-All required tables and RLS policies already exist. The `profiles` table already has an UPDATE policy for own profile (`auth.uid() = id`).
+The `coin_packages` table already exists with proper RLS policies (admin CRUD, public read of active packages). No migrations needed.
+
