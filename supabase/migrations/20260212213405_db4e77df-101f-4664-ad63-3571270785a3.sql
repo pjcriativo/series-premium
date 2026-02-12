@@ -1,0 +1,10 @@
+UPDATE banners SET image_url = CASE id
+  WHEN 'b0000001-0000-4000-8000-000000000001' THEN 'https://picsum.photos/seed/banner-amor/1200/500'
+  WHEN 'b0000001-0000-4000-8000-000000000002' THEN 'https://picsum.photos/seed/banner-sombras/1200/500'
+  WHEN 'b0000001-0000-4000-8000-000000000003' THEN 'https://picsum.photos/seed/banner-confusoes/1200/500'
+END
+WHERE id IN (
+  'b0000001-0000-4000-8000-000000000001',
+  'b0000001-0000-4000-8000-000000000002',
+  'b0000001-0000-4000-8000-000000000003'
+);
