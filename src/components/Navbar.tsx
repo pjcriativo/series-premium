@@ -33,10 +33,10 @@ const Navbar = () => {
 
         {user ? (
           <>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground font-medium">
+            <Link to="/coins" className="flex items-center gap-1 text-xs text-muted-foreground font-medium hover:text-foreground transition-colors">
               <Coins className="h-3.5 w-3.5 text-primary" />
               {profile?.coin_balance ?? 0}
-            </span>
+            </Link>
             <Link to="/admin">
               <Avatar className="h-8 w-8 border border-primary/50">
                 <AvatarFallback className="bg-primary/20 text-primary text-xs">
