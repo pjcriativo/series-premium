@@ -1,15 +1,27 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+
+interface Profile {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  auto_unlock: boolean;
+}
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  profile: Profile | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   const checkAdmin = async (userId: string) => {
     const { data } = await supabase
@@ -30,15 +43,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsAdmin(!!data);
   };
 
+  const fetchProfile = async (userId: string) => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("id, display_name, avatar_url, auto_unlock")
+      .eq("id", userId)
+      .maybeSingle();
+    setProfile(data);
+  };
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => checkAdmin(session.user.id), 0);
+          setTimeout(() => {
+            checkAdmin(session.user.id);
+            fetchProfile(session.user.id);
+          }, 0);
         } else {
           setIsAdmin(false);
+          setProfile(null);
         }
         setLoading(false);
       }
@@ -49,6 +75,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(session?.user ?? null);
       if (session?.user) {
         checkAdmin(session.user.id);
+        fetchProfile(session.user.id);
       }
       setLoading(false);
     });
@@ -78,8 +105,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (error) throw error;
   };
 
+  const signInWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+      },
+    });
+    if (error) throw error;
+  };
+
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth?mode=reset`,
+    });
+    if (error) throw error;
+  };
+
+  const updatePassword = async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  };
+
   return (
-    <AuthContext.Provider value={{ session, user, loading, isAdmin, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{
+        session, user, loading, isAdmin, profile,
+        signIn, signUp, signOut, signInWithGoogle, resetPassword, updatePassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -89,4 +143,15 @@ export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) throw new Error("useAuth must be used within AuthProvider");
   return context;
+};
+
+export const useRequireAuth = () => {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!auth.loading && !auth.user) {
+      navigate("/auth", { replace: true });
+    }
+  }, [auth.loading, auth.user, navigate]);
+  return auth;
 };
