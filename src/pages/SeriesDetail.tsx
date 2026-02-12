@@ -2,13 +2,13 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, Play, Lock, Coins, Unlock } from "lucide-react";
+import { ArrowLeft, Play, Lock, Coins, PlayCircle } from "lucide-react";
 import { getSeriesCover } from "@/lib/demo-covers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { toast } from "@/hooks/use-toast";
 import Navbar from "@/components/Navbar";
+import PaywallModal from "@/components/PaywallModal";
 import { useState } from "react";
 
 const SeriesDetail = () => {
@@ -16,7 +16,7 @@ const SeriesDetail = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [unlocking, setUnlocking] = useState<string | null>(null);
+  const [paywallEpisode, setPaywallEpisode] = useState<{ id: string; title: string; price_coins: number } | null>(null);
 
   const { data: series, isLoading: seriesLoading } = useQuery({
     queryKey: ["series", id],
@@ -81,34 +81,19 @@ const SeriesDetail = () => {
     enabled: !!user,
   });
 
-  const handleUnlock = async (episodeId?: string, seriesId?: string) => {
-    if (!user) { navigate("/auth"); return; }
-    setUnlocking(episodeId ?? seriesId ?? "series");
-    try {
-      const { data, error } = await supabase.functions.invoke("unlock-episode", {
-        body: episodeId ? { episode_id: episodeId } : { series_id: seriesId },
-      });
-      if (error) throw error;
-      if (data.error) {
-        toast({
-          title: data.error === "Insufficient balance" ? "Saldo insuficiente" : "Erro",
-          description: data.error === "Insufficient balance"
-            ? `Necessário: ${data.required} moedas. Saldo: ${data.current}`
-            : data.error,
-          variant: "destructive",
-        });
-      } else {
-        toast({ title: "Desbloqueado!", description: `${data.unlocked} episódio(s). Gasto: ${data.spent} moedas.` });
-        queryClient.invalidateQueries({ queryKey: ["episode-unlocks"] });
-        queryClient.invalidateQueries({ queryKey: ["series-unlock"] });
-        queryClient.invalidateQueries({ queryKey: ["wallet"] });
-      }
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    } finally {
-      setUnlocking(null);
-    }
-  };
+  const { data: progress } = useQuery({
+    queryKey: ["user-progress", id, user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("user_progress")
+        .select("last_episode_number, last_position_seconds")
+        .eq("user_id", user!.id)
+        .eq("series_id", id!)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!user && !!id,
+  });
 
   const isEpisodeAccessible = (ep: any) => {
     if (ep.is_free) return true;
@@ -123,14 +108,20 @@ const SeriesDetail = () => {
       if (!user && !ep.is_free) { navigate("/auth"); return; }
       navigate(`/watch/${ep.id}`);
     } else {
-      handleUnlock(ep.id);
+      if (!user) { navigate("/auth"); return; }
+      setPaywallEpisode({ id: ep.id, title: `Ep. ${ep.episode_number} — ${ep.title}`, price_coins: ep.price_coins });
     }
+  };
+
+  const handleResume = () => {
+    if (!progress || !episodes) return;
+    const ep = episodes.find((e) => e.episode_number === progress.last_episode_number);
+    if (ep) navigate(`/watch/${ep.id}`);
   };
 
   const isLoading = seriesLoading || episodesLoading;
   const categoryName = (series as any)?.categories?.name;
 
-  // Calculate total cost for unlocking remaining episodes
   const paidEpisodes = (episodes ?? []).filter((ep) => !ep.is_free && (!series || ep.episode_number > series.free_episodes));
   const totalSeriesCost = paidEpisodes.reduce((sum, ep) => sum + ep.price_coins, 0);
 
@@ -168,8 +159,13 @@ const SeriesDetail = () => {
             </div>
 
             <div className="px-4 -mt-8 relative z-10 space-y-3">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {categoryName && <Badge variant="secondary">{categoryName}</Badge>}
+                {series.free_episodes > 0 && (
+                  <Badge variant="outline" className="text-primary border-primary">
+                    {series.free_episodes} episódios grátis
+                  </Badge>
+                )}
                 <span className="text-xs text-muted-foreground">{episodes?.length ?? 0} episódios</span>
                 {wallet && (
                   <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1">
@@ -181,14 +177,28 @@ const SeriesDetail = () => {
               {series.synopsis && (
                 <p className="text-sm text-muted-foreground leading-relaxed">{series.synopsis}</p>
               )}
+
+              {progress && episodes && (
+                <Button onClick={handleResume} className="w-full gap-2" variant="secondary">
+                  <PlayCircle className="h-4 w-4" />
+                  Retomar Ep. {progress.last_episode_number}
+                </Button>
+              )}
+
               {totalSeriesCost > 0 && !seriesUnlocked && (
                 <Button
-                  className="w-full gap-2 mt-2"
-                  onClick={() => handleUnlock(undefined, id)}
-                  disabled={unlocking === "series"}
+                  className="w-full gap-2"
+                  onClick={() => {
+                    if (!user) { navigate("/auth"); return; }
+                    setPaywallEpisode({
+                      id: id!,
+                      title: `Série completa — ${series.title}`,
+                      price_coins: totalSeriesCost,
+                    });
+                  }}
                 >
                   <Coins className="h-4 w-4" />
-                  {unlocking === "series" ? "Desbloqueando..." : `Desbloquear Série — ${totalSeriesCost} moedas`}
+                  Desbloquear Série — {totalSeriesCost} moedas
                 </Button>
               )}
             </div>
@@ -202,8 +212,7 @@ const SeriesDetail = () => {
                   <button
                     key={ep.id}
                     onClick={() => handleEpisodeClick(ep)}
-                    disabled={unlocking === ep.id}
-                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-card border border-border text-left hover:bg-accent/50 transition-colors disabled:opacity-50"
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-card border border-border text-left hover:bg-accent/50 transition-colors"
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-md bg-secondary flex items-center justify-center">
                       {accessible ? (
@@ -234,6 +243,21 @@ const SeriesDetail = () => {
                 <p className="text-muted-foreground text-sm text-center py-8">Nenhum episódio disponível.</p>
               )}
             </div>
+
+            <PaywallModal
+              open={!!paywallEpisode}
+              onOpenChange={(open) => { if (!open) setPaywallEpisode(null); }}
+              episodeTitle={paywallEpisode?.title ?? ""}
+              episodeId={paywallEpisode?.id ?? ""}
+              priceCoin={paywallEpisode?.price_coins ?? 0}
+              balance={wallet?.balance ?? 0}
+              onUnlocked={() => {
+                setPaywallEpisode(null);
+                queryClient.invalidateQueries({ queryKey: ["episode-unlocks"] });
+                queryClient.invalidateQueries({ queryKey: ["series-unlock"] });
+                queryClient.invalidateQueries({ queryKey: ["wallet"] });
+              }}
+            />
           </>
         ) : (
           <div className="flex items-center justify-center py-20">
