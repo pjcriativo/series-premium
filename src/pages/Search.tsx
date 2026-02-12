@@ -5,6 +5,7 @@ import { Search as SearchIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import Navbar from "@/components/Navbar";
 import SeriesCard from "@/components/SeriesCard";
+import BottomNav from "@/components/BottomNav";
 
 const Search = () => {
   const [query, setQuery] = useState("");
@@ -46,7 +47,7 @@ const Search = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pt-14 px-4">
+      <main className="pt-14 pb-16 md:pb-0 px-4">
         <div className="relative mt-4 mb-4">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Buscar séries..." value={query} onChange={(e) => setQuery(e.target.value)} className="pl-9" />
@@ -82,6 +83,7 @@ const Search = () => {
           <p className="text-center text-muted-foreground py-12">Nenhuma série encontrada.</p>
         )}
       </main>
+      <BottomNav />
     </div>
   );
 };

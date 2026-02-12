@@ -11,13 +11,17 @@ import Auth from "./pages/Auth";
 import SeriesDetail from "./pages/SeriesDetail";
 import EpisodePlayer from "./pages/EpisodePlayer";
 import SearchPage from "./pages/Search";
+import Profile from "./pages/Profile";
+import Purchases from "./pages/Purchases";
+import CoinStore from "./pages/CoinStore";
 import AdminLayout from "./pages/admin/AdminLayout";
 import Dashboard from "./pages/admin/Dashboard";
 import SeriesManager from "./pages/admin/SeriesManager";
+import SeriesForm from "./pages/admin/SeriesForm";
 import EpisodeManager from "./pages/admin/EpisodeManager";
+import EpisodeForm from "./pages/admin/EpisodeForm";
 import UserManager from "./pages/admin/UserManager";
 import CategoryManager from "./pages/admin/CategoryManager";
-import CoinStore from "./pages/CoinStore";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -32,23 +36,47 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
+            {/* Auth routes */}
             <Route path="/auth" element={<Auth />} />
+            <Route path="/login" element={<Auth />} />
+            <Route path="/signup" element={<Auth />} />
+            <Route path="/forgot" element={<Auth />} />
+            <Route path="/reset-password" element={<Auth />} />
+
+            {/* Public routes */}
             <Route path="/" element={<Index />} />
+            <Route path="/search" element={<SearchPage />} />
             <Route path="/series/:id" element={<SeriesDetail />} />
+
+            {/* Player */}
             <Route path="/watch/:episodeId" element={
               <ProtectedRoute><EpisodePlayer /></ProtectedRoute>
             } />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/coins" element={
+
+            {/* User routes */}
+            <Route path="/me" element={
+              <ProtectedRoute><Profile /></ProtectedRoute>
+            } />
+            <Route path="/wallet" element={
               <ProtectedRoute><CoinStore /></ProtectedRoute>
             } />
+            <Route path="/purchases" element={
+              <ProtectedRoute><Purchases /></ProtectedRoute>
+            } />
+
+            {/* Admin routes */}
             <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
               <Route index element={<Dashboard />} />
               <Route path="categories" element={<CategoryManager />} />
               <Route path="series" element={<SeriesManager />} />
+              <Route path="series/new" element={<SeriesForm />} />
+              <Route path="series/:id/edit" element={<SeriesForm />} />
               <Route path="episodes" element={<EpisodeManager />} />
+              <Route path="episodes/new" element={<EpisodeForm />} />
+              <Route path="episodes/:id/edit" element={<EpisodeForm />} />
               <Route path="users" element={<UserManager />} />
             </Route>
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>
