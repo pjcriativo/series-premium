@@ -15,6 +15,7 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   isAdmin: boolean;
+  adminChecked: boolean;
   profile: Profile | null;
   refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
@@ -32,6 +33,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminChecked, setAdminChecked] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const checkAdmin = async (userId: string) => {
@@ -42,6 +44,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq("role", "admin")
       .maybeSingle();
     setIsAdmin(!!data);
+    setAdminChecked(true);
   };
 
   const fetchProfile = async (userId: string) => {
@@ -63,24 +66,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setTimeout(() => {
-            checkAdmin(session.user.id);
-            fetchProfile(session.user.id);
-          }, 0);
+          await Promise.all([
+            checkAdmin(session.user.id),
+            fetchProfile(session.user.id),
+          ]);
         } else {
           setIsAdmin(false);
+          setAdminChecked(true);
           setProfile(null);
         }
         setLoading(false);
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        checkAdmin(session.user.id);
-        fetchProfile(session.user.id);
+        await Promise.all([
+          checkAdmin(session.user.id),
+          fetchProfile(session.user.id),
+        ]);
+      } else {
+        setAdminChecked(true);
       }
       setLoading(false);
     });
@@ -135,7 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider
       value={{
-        session, user, loading, isAdmin, profile, refreshProfile,
+        session, user, loading, isAdmin, adminChecked, profile, refreshProfile,
         signIn, signUp, signOut, signInWithGoogle, resetPassword, updatePassword,
       }}
     >
