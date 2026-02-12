@@ -4,9 +4,6 @@ import Navbar from "@/components/Navbar";
 import HeroBanner from "@/components/HeroBanner";
 import CategoryRow from "@/components/CategoryRow";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tables } from "@/integrations/supabase/types";
-
-type SeriesWithCount = Tables<"series"> & { episode_count?: number };
 
 const Index = () => {
   const { data: allSeries, isLoading } = useQuery({
@@ -14,20 +11,18 @@ const Index = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("series")
-        .select("*")
-        .eq("status", "published")
+        .select("*, categories(name)")
+        .eq("is_published", true)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as Tables<"series">[];
+      return data;
     },
   });
 
   const { data: episodeCounts } = useQuery({
     queryKey: ["episode-counts"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("episodes")
-        .select("series_id");
+      const { data, error } = await supabase.from("episodes").select("series_id");
       if (error) throw error;
       const counts: Record<string, number> = {};
       data.forEach((ep) => {
@@ -37,16 +32,16 @@ const Index = () => {
     },
   });
 
-  const seriesWithCounts: SeriesWithCount[] = (allSeries || []).map((s) => ({
+  const seriesWithCounts = (allSeries || []).map((s) => ({
     ...s,
     episode_count: episodeCounts?.[s.id] ?? 0,
+    category_name: (s as any).categories?.name ?? null,
   }));
 
-  const featured = seriesWithCounts.filter((s) => s.featured);
-  const heroSeries = featured[0];
+  const heroSeries = seriesWithCounts[0];
   const newReleases = seriesWithCounts.slice(0, 10);
 
-  const genres = [...new Set(seriesWithCounts.map((s) => s.genre).filter(Boolean))] as string[];
+  const categoryNames = [...new Set(seriesWithCounts.map((s) => s.category_name).filter(Boolean))] as string[];
 
   return (
     <div className="min-h-screen bg-background">
@@ -66,25 +61,17 @@ const Index = () => {
           <>
             {heroSeries && <HeroBanner series={heroSeries} />}
 
-            {featured.length > 0 && (
-              <CategoryRow title="Em Destaque" series={featured} />
-            )}
-
             {newReleases.length > 0 && (
               <CategoryRow title="Novos Lançamentos" series={newReleases} />
             )}
 
-            {genres.map((genre) => (
+            {categoryNames.map((cat) => (
               <CategoryRow
-                key={genre}
-                title={genre}
-                series={seriesWithCounts.filter((s) => s.genre === genre)}
+                key={cat}
+                title={cat}
+                series={seriesWithCounts.filter((s) => s.category_name === cat)}
               />
             ))}
-
-            {seriesWithCounts.length > 0 && (
-              <CategoryRow title="Mais Recomendados" series={seriesWithCounts} />
-            )}
 
             {seriesWithCounts.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 px-4 text-center">

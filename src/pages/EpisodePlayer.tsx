@@ -1,8 +1,8 @@
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, Play, Pause, Maximize, Volume2 } from "lucide-react";
+import { ArrowLeft, Play, Pause, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
@@ -19,13 +19,12 @@ const EpisodePlayer = () => {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
 
-  // Fetch episode
   const { data: episode, isLoading: epLoading } = useQuery({
     queryKey: ["episode", episodeId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("episodes")
-        .select("*, series:series_id(id, title)")
+        .select("*, series:series_id(id, title, free_episodes)")
         .eq("id", episodeId!)
         .single();
       if (error) throw error;
@@ -34,40 +33,51 @@ const EpisodePlayer = () => {
     enabled: !!episodeId,
   });
 
-  // Check access
   const { data: hasAccess, isLoading: accessLoading } = useQuery({
     queryKey: ["episode-access", episodeId, user?.id],
     queryFn: async () => {
       if (!episode) return false;
       if (episode.is_free) return true;
+      const seriesFreeEps = (episode as any).series?.free_episodes ?? 0;
+      if (episode.episode_number <= seriesFreeEps) return true;
       if (!user) return false;
-      const { data } = await supabase
-        .from("user_unlocks")
+      // Check series unlock
+      const seriesId = (episode as any).series?.id ?? episode.series_id;
+      const { data: su } = await supabase
+        .from("series_unlocks")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("series_id", seriesId)
+        .maybeSingle();
+      if (su) return true;
+      // Check episode unlock
+      const { data: eu } = await supabase
+        .from("episode_unlocks")
         .select("id")
         .eq("user_id", user.id)
         .eq("episode_id", episodeId!)
         .maybeSingle();
-      return !!data;
+      return !!eu;
     },
     enabled: !!episode,
   });
 
-  // Fetch progress
   const { data: savedProgress } = useQuery({
     queryKey: ["progress", episodeId, user?.id],
     queryFn: async () => {
+      const seriesId = (episode as any)?.series?.id ?? episode?.series_id;
+      if (!seriesId) return null;
       const { data } = await supabase
         .from("user_progress")
         .select("*")
         .eq("user_id", user!.id)
-        .eq("episode_id", episodeId!)
+        .eq("series_id", seriesId)
         .maybeSingle();
       return data;
     },
-    enabled: !!user && !!episodeId,
+    enabled: !!user && !!episode,
   });
 
-  // Get signed video URL
   const { data: videoUrl } = useQuery({
     queryKey: ["video-url", episode?.video_url],
     queryFn: async () => {
@@ -81,35 +91,48 @@ const EpisodePlayer = () => {
     enabled: !!episode?.video_url && hasAccess === true,
   });
 
-  // Save progress
   const saveProgress = useCallback(
-    async (seconds: number, completed = false) => {
-      if (!user || !episodeId) return;
+    async (seconds: number) => {
+      if (!user || !episode) return;
+      const seriesId = (episode as any).series?.id ?? episode.series_id;
       const { data: existing } = await supabase
         .from("user_progress")
         .select("id")
         .eq("user_id", user.id)
-        .eq("episode_id", episodeId)
+        .eq("series_id", seriesId)
         .maybeSingle();
 
+      const payload = {
+        last_episode_number: episode.episode_number,
+        last_position_seconds: Math.floor(seconds),
+      };
+
       if (existing) {
-        await supabase
-          .from("user_progress")
-          .update({ progress_seconds: Math.floor(seconds), completed })
-          .eq("id", existing.id);
+        await supabase.from("user_progress").update(payload).eq("id", existing.id);
       } else {
         await supabase.from("user_progress").insert({
           user_id: user.id,
-          episode_id: episodeId,
-          progress_seconds: Math.floor(seconds),
-          completed,
+          series_id: seriesId,
+          ...payload,
         });
       }
     },
-    [user, episodeId]
+    [user, episode]
   );
 
-  // Redirect if no access
+  // Record view
+  useEffect(() => {
+    if (episode && hasAccess) {
+      const seriesId = (episode as any).series?.id ?? episode.series_id;
+      supabase.from("views").insert({
+        user_id: user?.id ?? null,
+        series_id: seriesId,
+        episode_id: episode.id,
+        watched_seconds: 0,
+      }).then(() => {});
+    }
+  }, [episode?.id, hasAccess]);
+
   useEffect(() => {
     if (!epLoading && !accessLoading && episode && hasAccess === false) {
       const seriesId = (episode as any).series?.id ?? episode.series_id;
@@ -118,49 +141,35 @@ const EpisodePlayer = () => {
     }
   }, [hasAccess, accessLoading, epLoading, episode, navigate]);
 
-  // Resume playback
   useEffect(() => {
-    if (savedProgress && videoRef.current && savedProgress.progress_seconds > 0) {
-      videoRef.current.currentTime = savedProgress.progress_seconds;
+    if (savedProgress && videoRef.current && savedProgress.last_position_seconds > 0 &&
+        savedProgress.last_episode_number === episode?.episode_number) {
+      videoRef.current.currentTime = savedProgress.last_position_seconds;
     }
   }, [savedProgress, videoUrl]);
 
-  // Auto-save every 10s
   useEffect(() => {
     if (isPlaying) {
       saveTimerRef.current = setInterval(() => {
         if (videoRef.current) saveProgress(videoRef.current.currentTime);
       }, 10000);
     }
-    return () => {
-      if (saveTimerRef.current) clearInterval(saveTimerRef.current);
-    };
+    return () => { if (saveTimerRef.current) clearInterval(saveTimerRef.current); };
   }, [isPlaying, saveProgress]);
 
-  // Save on unmount
   useEffect(() => {
-    return () => {
-      if (videoRef.current) saveProgress(videoRef.current.currentTime);
-    };
+    return () => { if (videoRef.current) saveProgress(videoRef.current.currentTime); };
   }, [saveProgress]);
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
     setCurrentTime(videoRef.current.currentTime);
-    // Mark completed at 90%
-    if (duration > 0 && videoRef.current.currentTime / duration >= 0.9) {
-      saveProgress(videoRef.current.currentTime, true);
-    }
   };
 
   const togglePlay = () => {
     if (!videoRef.current) return;
-    if (videoRef.current.paused) {
-      videoRef.current.play();
-    } else {
-      videoRef.current.pause();
-      saveProgress(videoRef.current.currentTime);
-    }
+    if (videoRef.current.paused) { videoRef.current.play(); }
+    else { videoRef.current.pause(); saveProgress(videoRef.current.currentTime); }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -189,24 +198,18 @@ const EpisodePlayer = () => {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-card border-b border-border">
         <Link to={`/series/${seriesId}`}>
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
+          <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
         </Link>
         <div className="min-w-0">
           <p className="text-sm font-medium text-foreground truncate">
             Ep. {episode?.episode_number} — {episode?.title}
           </p>
-          <p className="text-xs text-muted-foreground truncate">
-            {(episode as any)?.series?.title}
-          </p>
+          <p className="text-xs text-muted-foreground truncate">{(episode as any)?.series?.title}</p>
         </div>
       </div>
 
-      {/* Video */}
       <div className="flex-1 flex flex-col items-center justify-center bg-black">
         {videoUrl ? (
           <video
@@ -229,36 +232,20 @@ const EpisodePlayer = () => {
         )}
       </div>
 
-      {/* Controls */}
       <div className="px-4 py-3 bg-card border-t border-border space-y-2">
-        <input
-          type="range"
-          min={0}
-          max={duration || 100}
-          value={currentTime}
-          onChange={handleSeek}
-          className="w-full h-1 accent-primary cursor-pointer"
-        />
+        <input type="range" min={0} max={duration || 100} value={currentTime} onChange={handleSeek} className="w-full h-1 accent-primary cursor-pointer" />
         <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </span>
+          <span className="text-xs text-muted-foreground">{formatTime(currentTime)} / {formatTime(duration)}</span>
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={togglePlay}>
               {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => videoRef.current?.requestFullscreen()}
-            >
+            <Button variant="ghost" size="icon" onClick={() => videoRef.current?.requestFullscreen()}>
               <Maximize className="h-5 w-5" />
             </Button>
           </div>
         </div>
-        {duration > 0 && (
-          <Progress value={(currentTime / duration) * 100} className="h-1" />
-        )}
+        {duration > 0 && <Progress value={(currentTime / duration) * 100} className="h-1" />}
       </div>
     </div>
   );

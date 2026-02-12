@@ -6,13 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const PACKAGES = [
-  { id: "starter", coins: 50, label: "Starter" },
-  { id: "popular", coins: 150, label: "Popular" },
-  { id: "premium", coins: 500, label: "Premium" },
-  { id: "ultra", coins: 1200, label: "Ultra" },
-];
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -49,40 +42,82 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { package_id } = await req.json();
-    const pkg = PACKAGES.find((p) => p.id === package_id);
-    if (!pkg) {
+    const body = await req.json();
+
+    // Admin grant flow
+    if (body.admin_grant) {
+      // Verify caller is admin
+      const { data: isAdmin } = await supabaseAdmin.rpc("has_role", { _user_id: user.id, _role: "admin" });
+      if (!isAdmin) {
+        return new Response(JSON.stringify({ error: "Not authorized" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const targetUserId = body.target_user_id;
+      const coins = body.coins;
+
+      const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("user_id", targetUserId).single();
+      if (!wallet) throw new Error("Wallet not found");
+
+      await supabaseAdmin.from("wallets").update({ balance: wallet.balance + coins }).eq("user_id", targetUserId);
+      await supabaseAdmin.from("transactions").insert({
+        user_id: targetUserId,
+        type: "credit",
+        reason: "admin_adjust",
+        coins,
+        ref_id: user.id,
+      });
+
       return new Response(
-        JSON.stringify({ error: "Invalid package", available: PACKAGES }),
+        JSON.stringify({ success: true, coins_added: coins, new_balance: wallet.balance + coins }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Normal purchase flow
+    const { package_id } = body;
+
+    const { data: pkg, error: pkgError } = await supabaseAdmin
+      .from("coin_packages")
+      .select("*")
+      .eq("id", package_id)
+      .eq("is_active", true)
+      .single();
+    if (pkgError || !pkg) {
+      return new Response(
+        JSON.stringify({ error: "Invalid package" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Get current balance
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from("profiles")
-      .select("coin_balance")
-      .eq("id", user.id)
+    // Get current wallet
+    const { data: wallet, error: walletError } = await supabaseAdmin
+      .from("wallets")
+      .select("balance")
+      .eq("user_id", user.id)
       .single();
-    if (profileError) throw profileError;
+    if (walletError) throw walletError;
 
-    const newBalance = profile.coin_balance + pkg.coins;
+    const newBalance = wallet.balance + pkg.coins;
 
     // Update balance
     const { error: updateError } = await supabaseAdmin
-      .from("profiles")
-      .update({ coin_balance: newBalance })
-      .eq("id", user.id);
+      .from("wallets")
+      .update({ balance: newBalance })
+      .eq("user_id", user.id);
     if (updateError) throw updateError;
 
     // Record transaction
     const { error: txError } = await supabaseAdmin
-      .from("coin_transactions")
+      .from("transactions")
       .insert({
         user_id: user.id,
-        amount: pkg.coins,
-        type: "purchase",
-        description: `Purchased ${pkg.label} package (${pkg.coins} coins)`,
+        type: "credit",
+        reason: "purchase",
+        coins: pkg.coins,
+        ref_id: pkg.id,
       });
     if (txError) throw txError;
 
