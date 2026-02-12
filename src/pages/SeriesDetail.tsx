@@ -123,7 +123,8 @@ const SeriesDetail = () => {
   const categoryName = (series as any)?.categories?.name;
 
   const paidEpisodes = (episodes ?? []).filter((ep) => !ep.is_free && (!series || ep.episode_number > series.free_episodes));
-  const totalSeriesCost = paidEpisodes.reduce((sum, ep) => sum + ep.price_coins, 0);
+  const unlockedPaidEpisodes = paidEpisodes.filter((ep) => !episodeUnlocks?.has(ep.id));
+  const totalSeriesCost = seriesUnlocked ? 0 : unlockedPaidEpisodes.reduce((sum, ep) => sum + ep.price_coins, 0);
 
   return (
     <div className="min-h-screen bg-background">
@@ -251,12 +252,16 @@ const SeriesDetail = () => {
               episodeId={paywallEpisode?.id ?? ""}
               priceCoin={paywallEpisode?.price_coins ?? 0}
               balance={wallet?.balance ?? 0}
+              seriesId={id}
+              seriesTitle={series?.title}
+              seriesTotalCost={totalSeriesCost}
               onUnlocked={() => {
                 setPaywallEpisode(null);
                 queryClient.invalidateQueries({ queryKey: ["episode-unlocks"] });
                 queryClient.invalidateQueries({ queryKey: ["series-unlock"] });
                 queryClient.invalidateQueries({ queryKey: ["wallet"] });
               }}
+              onNavigateToWatch={(epId) => navigate(`/watch/${epId}`)}
             />
           </>
         ) : (
