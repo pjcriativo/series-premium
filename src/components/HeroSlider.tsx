@@ -40,8 +40,8 @@ const HeroSlider = ({ banners }: HeroSliderProps) => {
   if (!banners.length) return null;
 
   return (
-    <div className="w-full relative pt-4">
-      <section className="relative overflow-hidden">
+    <div className="w-full px-4 md:px-8 pt-4">
+      <section className="relative max-w-7xl mx-auto overflow-hidden rounded-lg">
         {/* Fade lateral esquerdo */}
         <div className="absolute left-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80 bg-gradient-to-r from-background via-background/50 to-transparent z-10 pointer-events-none" />
         {/* Fade lateral direito */}
