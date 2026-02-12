@@ -14,16 +14,255 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      coin_transactions: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string | null
+          id: string
+          type: Database["public"]["Enums"]["coin_transaction_type"]
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          type: Database["public"]["Enums"]["coin_transaction_type"]
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string | null
+          id?: string
+          type?: Database["public"]["Enums"]["coin_transaction_type"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      episodes: {
+        Row: {
+          coin_cost: number
+          created_at: string
+          duration_seconds: number | null
+          episode_number: number
+          id: string
+          is_free: boolean
+          series_id: string
+          thumbnail_url: string | null
+          title: string
+          video_url: string | null
+        }
+        Insert: {
+          coin_cost?: number
+          created_at?: string
+          duration_seconds?: number | null
+          episode_number: number
+          id?: string
+          is_free?: boolean
+          series_id: string
+          thumbnail_url?: string | null
+          title: string
+          video_url?: string | null
+        }
+        Update: {
+          coin_cost?: number
+          created_at?: string
+          duration_seconds?: number | null
+          episode_number?: number
+          id?: string
+          is_free?: boolean
+          series_id?: string
+          thumbnail_url?: string | null
+          title?: string
+          video_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episodes_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          coin_balance: number
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          coin_balance?: number
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          coin_balance?: number
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      series: {
+        Row: {
+          cover_url: string | null
+          created_at: string
+          description: string | null
+          featured: boolean
+          genre: string | null
+          id: string
+          status: Database["public"]["Enums"]["series_status"]
+          title: string
+          total_coin_price: number
+          updated_at: string
+        }
+        Insert: {
+          cover_url?: string | null
+          created_at?: string
+          description?: string | null
+          featured?: boolean
+          genre?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["series_status"]
+          title: string
+          total_coin_price?: number
+          updated_at?: string
+        }
+        Update: {
+          cover_url?: string | null
+          created_at?: string
+          description?: string | null
+          featured?: boolean
+          genre?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["series_status"]
+          title?: string
+          total_coin_price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_progress: {
+        Row: {
+          completed: boolean
+          episode_id: string
+          id: string
+          progress_seconds: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          completed?: boolean
+          episode_id: string
+          id?: string
+          progress_seconds?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          completed?: boolean
+          episode_id?: string
+          id?: string
+          progress_seconds?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_progress_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_unlocks: {
+        Row: {
+          episode_id: string | null
+          id: string
+          series_id: string | null
+          unlocked_at: string
+          user_id: string
+        }
+        Insert: {
+          episode_id?: string | null
+          id?: string
+          series_id?: string | null
+          unlocked_at?: string
+          user_id: string
+        }
+        Update: {
+          episode_id?: string | null
+          id?: string
+          series_id?: string | null
+          unlocked_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_unlocks_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_unlocks_series_id_fkey"
+            columns: ["series_id"]
+            isOneToOne: false
+            referencedRelation: "series"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
+      coin_transaction_type: "grant" | "purchase" | "spend"
+      series_status: "draft" | "published"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +389,10 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+      coin_transaction_type: ["grant", "purchase", "spend"],
+      series_status: ["draft", "published"],
+    },
   },
 } as const
