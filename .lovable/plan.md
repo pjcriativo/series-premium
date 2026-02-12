@@ -1,152 +1,152 @@
 
 
-# Enhanced PaywallModal + Unlock Service
+# Enhanced User Profile Page (/me)
 
 ## Overview
 
-Upgrade the existing `PaywallModal` to support both episode-level and series-level unlocking in a single modal, and extract all unlock/access logic into a reusable `unlockService.ts`.
+Transform the current simple Profile page into a rich user area with auto-unlock toggle, continue watching, watched series, transaction history, and logout.
 
-## What Changes
+## Current State
 
-### 1. New File: `src/lib/unlockService.ts`
+The Profile page currently shows: avatar, name, email, wallet link, purchases link, admin link, and logout button. It's a simple menu-style page.
 
-A service module with three exported functions that encapsulate all access and unlock logic:
+## Planned Sections (top to bottom)
 
-- **`canAccessEpisode(userId, episodeId)`**: Checks if an episode is free, within the series free limit, or if the user has an episode or series unlock record. Returns `boolean`.
-- **`unlockEpisode(userId, episodeId)`**: Calls the `unlock-episode` edge function with `{ episode_id }`. Returns the response (success, new balance, etc.).
-- **`unlockSeries(userId, seriesId)`**: Calls the same `unlock-episode` edge function with `{ series_id }`. Returns the response.
-
-All three functions use the Supabase client internally -- no new edge functions needed since the existing `unlock-episode` already supports both `episode_id` and `series_id` parameters.
-
-### 2. Rewrite: `src/components/PaywallModal.tsx`
-
-The modal gains a new "Desbloquear serie completa" option alongside the existing episode unlock.
-
-**New props added:**
-- `seriesId: string` -- the series ID for the full-series unlock option
-- `seriesTitle: string` -- display name for the series
-- `seriesTotalCost: number` -- total cost of all paid episodes in the series (calculated by the caller)
-- `onNavigateToWatch?: (episodeId: string) => void` -- optional callback to navigate after unlock
-
-**UI layout:**
-- Episode price row (existing)
-- Series price row (new): "Desbloquear serie completa -- {seriesTotalCost} moedas"
-- Current balance row (existing)
-- Two action buttons side by side (or stacked):
-  1. "Desbloquear episodio -- {priceCoin} moedas"
-  2. "Desbloquear serie -- {seriesTotalCost} moedas" (only if `seriesTotalCost > 0`)
-- If balance is insufficient for both, show "Comprar moedas" button
-- After successful unlock of either type: close modal, call `onUnlocked`, optionally navigate to `/watch`
-
-**Unlock calls use the new `unlockService`** instead of direct `supabase.functions.invoke`.
-
-### 3. Update Callers
-
-**`src/pages/SeriesDetail.tsx`**:
-- Pass new props (`seriesId`, `seriesTitle`, `seriesTotalCost`) to `PaywallModal`
-- Replace inline `isEpisodeAccessible` logic with `canAccessEpisode` from the service (or keep local for performance since it avoids async calls -- the service version is for server-side validation)
-
-**`src/pages/Index.tsx`**:
-- Pass new series props to `PaywallModal` from the `ReelEpisode` data (series_id, series_title are already available)
-- Calculate `seriesTotalCost` for the selected episode's series (fetch paid episodes count or pass a pre-computed value)
-
-**`src/hooks/useEpisodePlayer.ts`**:
-- Replace direct `supabase.functions.invoke("unlock-episode", ...)` call in `handleNext` with `unlockService.unlockEpisode()`
-- The PaywallModal in EpisodePlayer also receives the new series props
+1. **Header** -- Avatar, display name, email (already exists, keep as-is)
+2. **Auto-unlock toggle** -- Switch for `profile.auto_unlock`, updates the `profiles` table on toggle
+3. **Wallet row** -- Quick link to `/wallet` with balance (already exists, keep)
+4. **Continuar Assistindo** -- Horizontal scroll of series cards based on `user_progress`, each card shows series cover + "Ep. X" badge, links to `/watch/:episodeId` for the last watched episode
+5. **Series Assistidas** -- Horizontal scroll of all series where the user has progress records, linking to `/series/:id`
+6. **Historico** -- Last 20 transactions displayed as a list with type icon (credit/debit), reason, coins, and date
+7. **Admin link** -- If admin role (keep existing)
+8. **Logout button** -- (keep existing)
 
 ## Technical Details
 
-### `unlockService.ts` Implementation
+### File Modified: `src/pages/Profile.tsx` (rewrite)
 
+**New queries added:**
+
+1. **User progress with series data:**
 ```typescript
-import { supabase } from "@/integrations/supabase/client";
-
-export async function canAccessEpisode(userId: string, episodeId: string): Promise<boolean> {
-  // Fetch episode + series free_episodes
-  const { data: ep } = await supabase
-    .from("episodes")
-    .select("is_free, episode_number, series_id")
-    .eq("id", episodeId).single();
-  if (!ep) return false;
-  if (ep.is_free) return true;
-
-  const { data: series } = await supabase
-    .from("series").select("free_episodes")
-    .eq("id", ep.series_id).single();
-  if (series && ep.episode_number <= series.free_episodes) return true;
-
-  // Check unlocks
-  const { data: su } = await supabase
-    .from("series_unlocks").select("id")
-    .eq("user_id", userId).eq("series_id", ep.series_id).maybeSingle();
-  if (su) return true;
-
-  const { data: eu } = await supabase
-    .from("episode_unlocks").select("id")
-    .eq("user_id", userId).eq("episode_id", episodeId).maybeSingle();
-  return !!eu;
-}
-
-export async function unlockEpisode(episodeId: string) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await supabase.functions.invoke("unlock-episode", {
-    body: { episode_id: episodeId },
-    headers: { Authorization: `Bearer ${session?.access_token}` },
-  });
-  if (res.error) throw res.error;
-  return res.data;
-}
-
-export async function unlockSeries(seriesId: string) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await supabase.functions.invoke("unlock-episode", {
-    body: { series_id: seriesId },
-    headers: { Authorization: `Bearer ${session?.access_token}` },
-  });
-  if (res.error) throw res.error;
-  return res.data;
-}
+const { data: progressList } = useQuery({
+  queryKey: ["user-progress-all", user?.id],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from("user_progress")
+      .select("series_id, last_episode_number, last_position_seconds, updated_at")
+      .order("updated_at", { ascending: false });
+    return data;
+  },
+  enabled: !!user,
+});
 ```
 
-### PaywallModal New Interface
-
+2. **Series details for progress items:**
 ```typescript
-interface PaywallModalProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  episodeTitle: string;
-  episodeId: string;
-  priceCoin: number;
-  balance: number;
-  seriesId?: string;
-  seriesTitle?: string;
-  seriesTotalCost?: number;
-  onUnlocked: () => void;
-  onNavigateToWatch?: (episodeId: string) => void;
-}
+// Fetch series info for all progress entries
+const { data: watchedSeries } = useQuery({
+  queryKey: ["watched-series", seriesIds],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from("series")
+      .select("id, title, cover_url, slug, total_episodes")
+      .in("id", seriesIds);
+    return data;
+  },
+  enabled: seriesIds.length > 0,
+});
 ```
 
-### Series Cost Calculation
-
-Each caller computes `seriesTotalCost` from the episodes it already has loaded:
+3. **Episodes for "continue watching" (to get episode IDs for navigation):**
 ```typescript
-const seriesTotalCost = episodes
-  .filter(ep => !ep.is_free && ep.episode_number > series.free_episodes)
-  .filter(ep => !episodeUnlocks?.has(ep.id))
-  .reduce((sum, ep) => sum + ep.price_coins, 0);
+// For each progress entry, find the episode matching last_episode_number
+const { data: continueEpisodes } = useQuery({
+  queryKey: ["continue-episodes", progressList],
+  queryFn: async () => {
+    // Batch query: get episodes matching series_id + episode_number pairs
+    const promises = progressList.map(p =>
+      supabase.from("episodes")
+        .select("id, title, episode_number, series_id")
+        .eq("series_id", p.series_id)
+        .eq("episode_number", p.last_episode_number)
+        .maybeSingle()
+    );
+    const results = await Promise.all(promises);
+    return results.map(r => r.data).filter(Boolean);
+  },
+  enabled: !!progressList?.length,
+});
 ```
+
+4. **Recent transactions:**
+```typescript
+const { data: transactions } = useQuery({
+  queryKey: ["transactions", user?.id],
+  queryFn: async () => {
+    const { data } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(20);
+    return data;
+  },
+  enabled: !!user,
+});
+```
+
+**Auto-unlock toggle:**
+```typescript
+const handleAutoUnlockToggle = async (checked: boolean) => {
+  await supabase.from("profiles").update({ auto_unlock: checked }).eq("id", user.id);
+  // Refresh profile in auth context
+};
+```
+The `useAuth` hook's `fetchProfile` is not exposed, so after updating, we invalidate and also optimistically update the local profile state. Since `profile` comes from the auth context, we can call `fetchProfile` if we expose it, or simply reload. The simplest approach: add a `refreshProfile` method to the auth context, or just update the profiles table and show a toast -- the auth context will pick it up on next mount.
+
+**Better approach**: Expose `refreshProfile` from `useAuth` by adding it to the context value. This is a small change to `src/hooks/useAuth.tsx`.
+
+### File Modified: `src/hooks/useAuth.tsx`
+
+Add `refreshProfile` to the context:
+- Extract `fetchProfile` so it can be called externally
+- Add `refreshProfile: () => Promise<void>` to `AuthContextType`
+- Include it in the provider value
+
+### UI Components Used
+
+- `Switch` from `@/components/ui/switch` for auto-unlock toggle
+- `SeriesCard` or inline card component for continue watching / watched series (horizontal scroll)
+- `Card` for transaction history items
+- Existing `Avatar`, `Button`, `Link` components
+
+### Section: "Continuar Assistindo"
+
+Each item is a small card showing:
+- Series cover image (2:3 aspect ratio, same as SeriesCard)
+- Series title
+- Badge overlay: "Ep. {N}"
+- Click navigates to `/watch/:episodeId`
+
+### Section: "Series Assistidas"
+
+Reuses the same horizontal scroll pattern but links to `/series/:id` instead of the player.
+
+### Section: "Historico"
+
+Each transaction row shows:
+- Icon: green arrow up for credit, red arrow down for debit
+- Reason label mapped from enum (purchase -> "Compra de moedas", episode_unlock -> "Desbloqueio de episodio", series_unlock -> "Desbloqueio de serie", admin_adjust -> "Ajuste admin")
+- Coins amount with +/- prefix
+- Relative date (using `date-fns` formatDistanceToNow)
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/lib/unlockService.ts` | Create |
-| `src/components/PaywallModal.tsx` | Rewrite |
-| `src/pages/SeriesDetail.tsx` | Update (pass new props) |
-| `src/pages/Index.tsx` | Update (pass new props) |
-| `src/hooks/useEpisodePlayer.ts` | Update (use unlockService) |
+| `src/pages/Profile.tsx` | Rewrite with new sections |
+| `src/hooks/useAuth.tsx` | Add `refreshProfile` to context |
 
-## No Database/Edge Function Changes
+## No Database Changes
 
-The existing `unlock-episode` edge function already handles both `episode_id` and `series_id` parameters, so no backend changes are needed.
-
+All required tables and RLS policies already exist. The `profiles` table already has an UPDATE policy for own profile (`auth.uid() = id`).
