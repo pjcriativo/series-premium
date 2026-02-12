@@ -116,6 +116,17 @@ const Profile = () => {
           <p className="text-sm text-muted-foreground">{user?.email}</p>
         </div>
 
+        {/* Back to admin */}
+        {isAdmin && (
+          <Link
+            to="/admin"
+            className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors mb-4"
+          >
+            <ShieldCheck className="h-5 w-5 text-primary" />
+            <span className="text-sm font-medium text-foreground">Voltar ao Painel Admin</span>
+          </Link>
+        )}
+
         {/* Auto-unlock toggle */}
         <div className="flex items-center justify-between p-4 rounded-xl bg-card border border-border mb-2">
           <div>
