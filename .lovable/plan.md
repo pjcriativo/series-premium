@@ -1,112 +1,98 @@
 
 
-# Admin: Users + Coin Adjustment Enhancement
+# Admin Dashboard: Metricas Simples
 
 ## Overview
 
-Enhance the UserManager page and the `buy-coins` edge function to support full balance adjustments (credit and debit) with negative-balance prevention, and add a transaction history dialog per user.
-
-## Current State
-
-- **UserManager**: Lists users with name, balance, roles, created_at. Has grant-coins dialog (credit only) and admin role toggle with confirmation. Search and pagination already work.
-- **buy-coins edge function**: Has an `admin_grant` flow that only adds coins (credit). No debit support, no balance validation.
-- **Missing**: No way to debit coins. No transaction history view. No negative-balance guard.
+Rewrite the Dashboard page to display rich metrics across 5 sections: summary cards, views by series, sales revenue, coin purchases, and retention indicators. All data is fetched client-side from existing tables using the admin's RLS policies.
 
 ## Changes
 
-### 1. `supabase/functions/buy-coins/index.ts` (Update)
+### 1. `src/pages/admin/Dashboard.tsx` (Rewrite)
 
-Modify the `admin_grant` flow to support both credit and debit:
+Replace the current 3-card layout with a comprehensive metrics dashboard.
 
-- Accept `coins` as a positive or negative number (positive = credit, negative = debit)
-- Before applying a debit, check that `wallet.balance + coins >= 0`. If not, return a 400 error: "Saldo insuficiente"
-- Set transaction `type` dynamically: `coins > 0 ? "credit" : "debit"`
-- Store `Math.abs(coins)` in the transaction record (coins column stays positive, type indicates direction)
+**Section 1 -- Summary Cards (top row, grid of 5)**
 
-### 2. `src/pages/admin/UserManager.tsx` (Update)
+| Card | Source | Query |
+|------|--------|-------|
+| Total Views | `views` | `select("id", { count: "exact", head: true })` |
+| Users | `profiles` | `select("id", { count: "exact", head: true })` |
+| Series | `series` | `select("id", { count: "exact", head: true })` |
+| Episodes | `episodes` | `select("id", { count: "exact", head: true })` |
+| Coin Purchases Revenue | `transactions` | `select("coins").eq("type","credit").eq("reason","purchase")` then sum client-side |
 
-**Adjust Coins Dialog** -- replace the simple "grant" dialog with a credit/debit selector:
+**Section 2 -- Views por Serie (table)**
 
-- Add a toggle or select: "Creditar" / "Debitar"
-- Amount input (always positive number)
-- On submit: send positive coins for credit, negative coins for debit
-- Show current balance in the dialog for reference
+- Query `views` with `select("series_id")`, group client-side by `series_id`, count per series
+- Join with series titles by fetching `series` separately and mapping by id
+- Display as a sorted table: Series Title | Views count
+- Limit to top 10
 
-**Transaction History Dialog** -- new action button per user row:
+**Section 3 -- Sales (Vendas)**
 
-- New icon button (Receipt/History icon) in the actions column
-- Opens a Dialog showing recent transactions for that user
-- Query `transactions` table filtered by `user_id`, ordered by `created_at desc`, limit 50
-- Table columns: Date, Type (credit/debit badge), Reason, Coins, Ref ID
+Two sub-metrics displayed as cards:
+- **Episode unlocks revenue**: `transactions` where `type = "debit"` and `reason = "episode_unlock"`, sum `coins`
+- **Series unlocks revenue**: `transactions` where `type = "debit"` and `reason = "series_unlock"`, sum `coins`
 
-**Table column addition**: No email column needed (profiles table has no email). Keep current columns.
+**Section 4 -- Coin Purchases (Compras de moedas)**
 
-### 3. No Database Changes
+- Total coins purchased: `transactions` where `type = "credit"` and `reason = "purchase"`, sum `coins`
+- Number of purchases: count of those rows
 
-The `transactions` table already supports `type: credit | debit` and `reason: admin_adjust`. Wallets table and RLS policies are already correct. Admin can already read all transactions and wallets via existing RLS policies.
+**Section 5 -- Retention**
 
-## Technical Details
+- **% users with progress in more than 1 episode**: Query `user_progress` select all, then count distinct `user_id` where `last_episode_number > 1`. Divide by total users count. Display as percentage.
+- **Most resumed series**: Query `user_progress` select all, group by `series_id` client-side, count entries per series (each entry = a user who has progress). Sort descending, show top 5 with series title.
 
-### Edge Function Debit Logic
+### Data Fetching Strategy
 
-```typescript
-// In admin_grant flow
-const coins = body.coins; // positive for credit, negative for debit
-const newBalance = wallet.balance + coins;
+Use a single `useQuery` that runs all queries in `Promise.all` to avoid waterfall requests:
 
-if (newBalance < 0) {
-  return new Response(
-    JSON.stringify({ error: "Saldo insuficiente" }),
-    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-}
-
-await supabaseAdmin.from("wallets").update({ balance: newBalance }).eq("user_id", targetUserId);
-await supabaseAdmin.from("transactions").insert({
-  user_id: targetUserId,
-  type: coins > 0 ? "credit" : "debit",
-  reason: "admin_adjust",
-  coins: Math.abs(coins),
-  ref_id: user.id,
-});
+```text
+Promise.all([
+  profiles count,
+  series (id, title),
+  episodes count,
+  views (series_id) -- up to 1000,
+  transactions (type, reason, coins),
+  user_progress (user_id, series_id, last_episode_number),
+])
 ```
 
-### Adjust Dialog UI
+All aggregation happens client-side since the dataset sizes are manageable for an admin dashboard.
 
-```typescript
-const [adjustMode, setAdjustMode] = useState<"credit" | "debit">("credit");
-const [coinAmount, setCoinAmount] = useState(100);
+### UI Layout
 
-// On submit
-const finalCoins = adjustMode === "credit" ? coinAmount : -coinAmount;
-grantCoinsMutation.mutate({ userId, amount: finalCoins });
+```text
++-----------------------------------------------------+
+| Dashboard                                            |
++-----------------------------------------------------+
+| [Views] [Users] [Series] [Episodes] [Purchases]     |  <-- summary cards
++-----------------------------------------------------+
+| Views por Serie          | Vendas                    |
+| (table top 10)           | Episode unlocks: X coins  |
+|                          | Series unlocks: Y coins   |
++-----------------------------------------------------+
+| Compras de Moedas        | Retencao                  |
+| Total: X coins           | % users >1 ep: X%        |
+| Purchases: N             | Top series retomadas      |
+|                          | (list top 5)              |
++-----------------------------------------------------+
 ```
 
-### Transaction History Dialog
+Uses existing `Card`, `Table`, and `Progress` components. Recharts `BarChart` for the views-by-series visualization as an alternative to the table (recharts is already installed).
 
-```typescript
-const [txDialog, setTxDialog] = useState<{ userId: string; name: string } | null>(null);
+### Icons
 
-const { data: transactions } = useQuery({
-  queryKey: ["admin-user-transactions", txDialog?.userId],
-  queryFn: async () => {
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", txDialog!.userId)
-      .order("created_at", { ascending: false })
-      .limit(50);
-    if (error) throw error;
-    return data;
-  },
-  enabled: !!txDialog,
-});
-```
+- Eye for views, Users for users, Film for series, Tv for episodes, Coins for purchases, TrendingUp for sales, BarChart3 for retention
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `supabase/functions/buy-coins/index.ts` | Update (add debit support + balance check) |
-| `src/pages/admin/UserManager.tsx` | Update (credit/debit toggle + transaction history dialog) |
+| `src/pages/admin/Dashboard.tsx` | Rewrite |
 
+## No Database or Route Changes
+
+All data is already accessible via admin RLS policies. The route `/admin` already renders `Dashboard`.
