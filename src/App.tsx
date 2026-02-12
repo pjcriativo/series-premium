@@ -16,6 +16,7 @@ import Dashboard from "./pages/admin/Dashboard";
 import SeriesManager from "./pages/admin/SeriesManager";
 import EpisodeManager from "./pages/admin/EpisodeManager";
 import UserManager from "./pages/admin/UserManager";
+import CoinStore from "./pages/CoinStore";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +36,9 @@ const App = () => (
               <ProtectedRoute><EpisodePlayer /></ProtectedRoute>
             } />
             <Route path="/search" element={<SearchPage />} />
+            <Route path="/coins" element={
+              <ProtectedRoute><CoinStore /></ProtectedRoute>
+            } />
             <Route
               path="/admin"
               element={
