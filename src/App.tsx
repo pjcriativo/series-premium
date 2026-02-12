@@ -20,7 +20,9 @@ import CategoryManager from "./pages/admin/CategoryManager";
 import CoinStore from "./pages/CoinStore";
 import NotFound from "./pages/NotFound";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1 } },
+});
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
