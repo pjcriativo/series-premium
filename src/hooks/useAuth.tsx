@@ -16,6 +16,7 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   profile: Profile | null;
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -50,6 +51,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq("id", userId)
       .maybeSingle();
     setProfile(data);
+  };
+
+  const refreshProfile = async () => {
+    if (user) await fetchProfile(user.id);
   };
 
   useEffect(() => {
@@ -130,7 +135,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider
       value={{
-        session, user, loading, isAdmin, profile,
+        session, user, loading, isAdmin, profile, refreshProfile,
         signIn, signUp, signOut, signInWithGoogle, resetPassword, updatePassword,
       }}
     >
