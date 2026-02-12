@@ -1,114 +1,112 @@
 
 
-# Admin: CRUD de Episodios com Upload de Video
+# Admin: Users + Coin Adjustment Enhancement
 
 ## Overview
 
-Transform the placeholder `EpisodeForm` into a full-page form (matching the `SeriesForm` pattern), and simplify `EpisodeManager` to be a list-only page that links to the form routes. Add upload progress tracking and duplicate `episode_number` validation.
+Enhance the UserManager page and the `buy-coins` edge function to support full balance adjustments (credit and debit) with negative-balance prevention, and add a transaction history dialog per user.
+
+## Current State
+
+- **UserManager**: Lists users with name, balance, roles, created_at. Has grant-coins dialog (credit only) and admin role toggle with confirmation. Search and pagination already work.
+- **buy-coins edge function**: Has an `admin_grant` flow that only adds coins (credit). No debit support, no balance validation.
+- **Missing**: No way to debit coins. No transaction history view. No negative-balance guard.
 
 ## Changes
 
-### 1. `src/pages/admin/EpisodeForm.tsx` (Rewrite)
+### 1. `supabase/functions/buy-coins/index.ts` (Update)
 
-Full form page for `/admin/episodes/new` and `/admin/episodes/:id/edit`:
+Modify the `admin_grant` flow to support both credit and debit:
 
-**Fields:**
-- series_id (Select dropdown of all series)
-- episode_number (number input)
-- title (text)
-- duration_seconds (number)
-- is_free (Switch)
-- price_coins (number)
-- is_published (Switch)
-- video upload (file input, accept `.mp4,video/mp4`)
+- Accept `coins` as a positive or negative number (positive = credit, negative = debit)
+- Before applying a debit, check that `wallet.balance + coins >= 0`. If not, return a 400 error: "Saldo insuficiente"
+- Set transaction `type` dynamically: `coins > 0 ? "credit" : "debit"`
+- Store `Math.abs(coins)` in the transaction record (coins column stays positive, type indicates direction)
 
-**Upload with progress:**
-- Use `XMLHttpRequest` instead of `supabase.storage.upload()` to track upload progress
-- Show a `Progress` bar component during upload with percentage
-- Upload state: idle, uploading (with %), done, error
-- Save the storage path as `video_url` on the episode record
+### 2. `src/pages/admin/UserManager.tsx` (Update)
 
-**Duplicate episode_number check:**
-- Before saving, query `episodes` where `series_id = form.series_id` AND `episode_number = form.episode_number` AND `id != editId`
-- If a match is found, show a toast error and abort save
+**Adjust Coins Dialog** -- replace the simple "grant" dialog with a credit/debit selector:
 
-**On edit mode:**
-- Fetch episode by `id` param and populate the form
-- If `video_url` exists, show a "Video atual: filename" indicator
-- Allow re-uploading (replaces the old video_url)
+- Add a toggle or select: "Creditar" / "Debitar"
+- Amount input (always positive number)
+- On submit: send positive coins for credit, negative coins for debit
+- Show current balance in the dialog for reference
 
-**After save:** redirect to `/admin/episodes` with success toast, invalidate queries.
+**Transaction History Dialog** -- new action button per user row:
 
-### 2. `src/pages/admin/EpisodeManager.tsx` (Update)
+- New icon button (Receipt/History icon) in the actions column
+- Opens a Dialog showing recent transactions for that user
+- Query `transactions` table filtered by `user_id`, ordered by `created_at desc`, limit 50
+- Table columns: Date, Type (credit/debit badge), Reason, Coins, Ref ID
 
-- Remove the `Dialog` form, all form state, `saveMutation`, `uploadVideo`, `openEdit`, `openCreate`, `videoFile`
-- Change "Novo Episodio" button to a `Link` to `/admin/episodes/new`
-- Change edit button (pencil) to a `Link` to `/admin/episodes/:id/edit`
-- Keep: series filter Select, table, search, pagination, delete confirmation, delete mutation
+**Table column addition**: No email column needed (profiles table has no email). Keep current columns.
 
-### Technical Details
+### 3. No Database Changes
 
-**Upload with progress using XHR:**
+The `transactions` table already supports `type: credit | debit` and `reason: admin_adjust`. Wallets table and RLS policies are already correct. Admin can already read all transactions and wallets via existing RLS policies.
+
+## Technical Details
+
+### Edge Function Debit Logic
 
 ```typescript
-const uploadVideoWithProgress = (file: File, onProgress: (pct: number) => void): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const path = `${crypto.randomUUID()}.mp4`;
-    const url = `https://pnuydoujbrpfhohsxndz.supabase.co/storage/v1/object/videos/${path}`;
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
-    xhr.setRequestHeader("Content-Type", file.type);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(path) : reject(new Error("Upload failed"));
-    xhr.onerror = () => reject(new Error("Upload failed"));
-    xhr.send(file);
-  });
-};
-```
+// In admin_grant flow
+const coins = body.coins; // positive for credit, negative for debit
+const newBalance = wallet.balance + coins;
 
-**Duplicate check:**
-
-```typescript
-const { data: existing } = await supabase
-  .from("episodes")
-  .select("id")
-  .eq("series_id", form.series_id)
-  .eq("episode_number", form.episode_number)
-  .neq("id", editId ?? "00000000-0000-0000-0000-000000000000")
-  .maybeSingle();
-
-if (existing) {
-  toast({ title: "Erro", description: "Ja existe um episodio com esse numero nesta serie.", variant: "destructive" });
-  return;
+if (newBalance < 0) {
+  return new Response(
+    JSON.stringify({ error: "Saldo insuficiente" }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
 }
+
+await supabaseAdmin.from("wallets").update({ balance: newBalance }).eq("user_id", targetUserId);
+await supabaseAdmin.from("transactions").insert({
+  user_id: targetUserId,
+  type: coins > 0 ? "credit" : "debit",
+  reason: "admin_adjust",
+  coins: Math.abs(coins),
+  ref_id: user.id,
+});
 ```
 
-**Progress UI:**
+### Adjust Dialog UI
 
 ```typescript
-// State
-const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+const [adjustMode, setAdjustMode] = useState<"credit" | "debit">("credit");
+const [coinAmount, setCoinAmount] = useState(100);
 
-// In form, below file input
-{uploadProgress !== null && (
-  <div className="space-y-1">
-    <Progress value={uploadProgress} className="h-2" />
-    <p className="text-xs text-muted-foreground">{uploadProgress}%</p>
-  </div>
-)}
+// On submit
+const finalCoins = adjustMode === "credit" ? coinAmount : -coinAmount;
+grantCoinsMutation.mutate({ userId, amount: finalCoins });
+```
+
+### Transaction History Dialog
+
+```typescript
+const [txDialog, setTxDialog] = useState<{ userId: string; name: string } | null>(null);
+
+const { data: transactions } = useQuery({
+  queryKey: ["admin-user-transactions", txDialog?.userId],
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .eq("user_id", txDialog!.userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!txDialog,
+});
 ```
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/pages/admin/EpisodeForm.tsx` | Rewrite (full form with video upload + progress) |
-| `src/pages/admin/EpisodeManager.tsx` | Update (remove dialog, use links) |
-
-## No Database or Route Changes
-
-Routes `/admin/episodes/new` and `/admin/episodes/:id/edit` already exist in `App.tsx`. The `episodes` table and `videos` storage bucket already exist with correct RLS policies.
+| `supabase/functions/buy-coins/index.ts` | Update (add debit support + balance check) |
+| `src/pages/admin/UserManager.tsx` | Update (credit/debit toggle + transaction history dialog) |
 
