@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tables } from "@/integrations/supabase/types";
+import { getSeriesCover } from "@/lib/demo-covers";
 
 interface HeroBannerProps {
   series: Tables<"series">;
@@ -10,15 +11,14 @@ interface HeroBannerProps {
 const HeroBanner = ({ series }: HeroBannerProps) => {
   return (
     <section className="relative w-full aspect-[16/9] md:aspect-[21/9] overflow-hidden">
-      {series.cover_url ? (
-        <img
-          src={series.cover_url}
-          alt={series.title}
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full bg-secondary" />
-      )}
+      {(() => {
+        const cover = getSeriesCover(series.id, series.cover_url);
+        return cover ? (
+          <img src={cover} alt={series.title} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full bg-secondary" />
+        );
+      })()}
 
       <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-r from-background/60 to-transparent" />
