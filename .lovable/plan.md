@@ -1,161 +1,87 @@
 
 
-# Admin Panel Enhancement
+# Admin: CRUD de Series (Full-Page Forms)
 
 ## Overview
 
-Upgrade the admin panel with a responsive layout (sidebar on desktop, drawer on mobile), add a "Pacotes de Moedas" (Coin Packages) management section, and add search + pagination + delete confirmation modals to all admin tables.
-
-## What Exists
-
-- **AdminRoute**: Already guards based on `isAdmin` from `useAuth` (checks `user_roles` table). No changes needed.
-- **AdminLayout**: Desktop-only fixed sidebar with nav items. No mobile support.
-- **Manager pages**: SeriesManager, EpisodeManager, UserManager, CategoryManager -- all have tables but no search, no pagination, and delete buttons fire immediately without confirmation.
-- **Missing**: Coin Packages manager (the `coin_packages` table exists but has no admin CRUD page).
-- **Routes**: Already wired in `App.tsx` under `/admin`.
+Replace the current dialog-based series form in `SeriesManager` with dedicated full-page form routes (`/admin/series/new` and `/admin/series/:id/edit`). The list page keeps search, pagination, and delete confirmation but links to the form pages instead of opening a modal.
 
 ## Changes
 
-### 1. `src/pages/admin/AdminLayout.tsx` (Rewrite)
+### 1. `src/pages/admin/SeriesForm.tsx` (Rewrite)
 
-**Desktop**: Keep the fixed sidebar (current behavior).
+Build out the placeholder into a full form page with:
 
-**Mobile**: Replace fixed sidebar with a `Sheet` (slide-in drawer) triggered by a hamburger button in a top bar.
+- **Back button** linking to `/admin/series`
+- **Title**: "Nova Serie" or "Editar Serie" based on URL param
+- **Fields**: title, slug (auto-generated from title), synopsis (textarea), category_id (select), cover upload (file input + current cover preview), total_episodes (number), free_episodes (number), is_published (switch)
+- **On edit**: fetch series by `id` param, populate form. Show current cover image if exists.
+- **Cover upload**: upload to `covers` bucket, same logic as current SeriesManager
+- **Auto total_episodes**: after save, query `episodes` table for `MAX(episode_number)` where `series_id = id` and update `total_episodes` if the count is higher than the manual value
+- **Save**: insert or update in `series` table, then redirect to `/admin/series` with a success toast
+- **Queries**: fetch categories for the select dropdown, fetch series data on edit
 
-- Use `useIsMobile()` hook to detect viewport
-- Desktop: render the sidebar as-is (fixed left, 256px wide)
-- Mobile: render a top bar with hamburger + "Admin Panel" title, and a `Sheet` from the left containing the same nav items
-- Nav items list stays the same but adds the new "Pacotes de Moedas" entry
-- Clicking a nav item on mobile closes the drawer
+### 2. `src/pages/admin/SeriesManager.tsx` (Update)
 
-**New nav item added:**
-```typescript
-{ to: "/admin/packages", icon: Coins, label: "Pacotes de Moedas" }
-```
+- Remove the `Dialog` form (all form state, `saveMutation`, `uploadCover`, `openEdit`, `coverFile`)
+- Change "Nova Serie" button to a `Link` to `/admin/series/new`
+- Change edit button (pencil icon) to a `Link` to `/admin/series/:id/edit`
+- Keep: table, search, pagination, delete confirmation, delete mutation
 
-### 2. New File: `src/pages/admin/CoinPackageManager.tsx`
+### 3. No Route Changes
 
-Full CRUD manager for coin packages, following the same pattern as CategoryManager:
-
-- Table with columns: Title, Coins, Price (BRL), Stripe Price ID, Active, Actions
-- Dialog form for create/edit with fields: title, coins, price_cents, stripe_price_id, is_active
-- Delete with confirmation (using AlertDialog)
-- Search input to filter by title
-- Pagination (10 items per page)
-
-### 3. Update All Manager Pages with Search, Pagination, and Delete Confirmation
-
-Each manager page gets three enhancements:
-
-**Search**: An `Input` field above the table that filters rows client-side by the main text column (title/name/display_name).
-
-**Pagination**: Simple previous/next buttons below the table. 10 items per page. Shows "Page X of Y".
-
-**Delete Confirmation**: Replace direct `deleteMutation.mutate(id)` calls with an `AlertDialog` that asks "Tem certeza que deseja excluir?" before proceeding. This applies to:
-- `SeriesManager.tsx`
-- `EpisodeManager.tsx`
-- `UserManager.tsx` (no delete, but the admin toggle gets a confirmation)
-- `CategoryManager.tsx`
-- `CoinPackageManager.tsx` (new)
-
-### 4. `src/App.tsx`
-
-Add the new route:
-```typescript
-<Route path="packages" element={<CoinPackageManager />} />
-```
+Routes `/admin/series/new` and `/admin/series/:id/edit` already exist in `App.tsx`.
 
 ## Technical Details
 
-### Responsive Layout Pattern
+### SeriesForm Implementation
 
 ```typescript
-// AdminLayout.tsx
-const isMobile = useIsMobile();
-const [drawerOpen, setDrawerOpen] = useState(false);
+// Load series on edit
+const { data: series } = useQuery({
+  queryKey: ["admin-series-detail", id],
+  queryFn: async () => {
+    const { data, error } = await supabase.from("series").select("*").eq("id", id).single();
+    if (error) throw error;
+    return data;
+  },
+  enabled: !!id,
+});
 
-// Shared nav list component
-const NavItems = ({ onItemClick }) => (
-  navItems.map(item => (
-    <NavLink to={item.to} end={item.end} onClick={onItemClick} ...>
-      <item.icon /> {item.label}
-    </NavLink>
-  ))
-);
+// Populate form when series data loads
+useEffect(() => {
+  if (series) setForm({ ...series, category_id: series.category_id ?? "" });
+}, [series]);
 
-// Desktop: <aside className="fixed w-64 ..."><NavItems /></aside>
-// Mobile: <Sheet open={drawerOpen}><SheetContent side="left"><NavItems onItemClick={() => setDrawerOpen(false)} /></SheetContent></Sheet>
+// After save, auto-update total_episodes
+const { data: maxEp } = await supabase
+  .from("episodes")
+  .select("episode_number")
+  .eq("series_id", savedId)
+  .order("episode_number", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+if (maxEp && maxEp.episode_number > form.total_episodes) {
+  await supabase.from("series").update({ total_episodes: maxEp.episode_number }).eq("id", savedId);
+}
+
+// Redirect after save
+navigate("/admin/series");
 ```
 
-### Reusable Delete Confirmation Pattern
+### Cover Preview on Edit
 
-Each manager will use `AlertDialog` inline:
-
-```typescript
-const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-
-// In table row:
-<Button onClick={() => setDeleteTarget(item.id)}>
-  <Trash2 />
-</Button>
-
-// At component bottom:
-<AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-  <AlertDialogContent>
-    <AlertDialogHeader>
-      <AlertDialogTitle>Confirmar exclusao</AlertDialogTitle>
-      <AlertDialogDescription>Esta acao nao pode ser desfeita.</AlertDialogDescription>
-    </AlertDialogHeader>
-    <AlertDialogFooter>
-      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-      <AlertDialogAction onClick={() => { deleteMutation.mutate(deleteTarget!); setDeleteTarget(null); }}>
-        Excluir
-      </AlertDialogAction>
-    </AlertDialogFooter>
-  </AlertDialogContent>
-</AlertDialog>
-```
-
-### Search + Pagination Pattern
-
-```typescript
-const [search, setSearch] = useState("");
-const [page, setPage] = useState(0);
-const PAGE_SIZE = 10;
-
-const filtered = (items ?? []).filter(i =>
-  i.title.toLowerCase().includes(search.toLowerCase())
-);
-const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-
-// Reset page when search changes
-useEffect(() => setPage(0), [search]);
-```
-
-### CoinPackageManager Form Fields
-
-| Field | Type | Notes |
-|-------|------|-------|
-| title | text | Required |
-| coins | number | Required, min 1 |
-| price_cents | number | Required, displayed as BRL |
-| stripe_price_id | text | Optional |
-| is_active | switch | Default true |
+When editing, if `form.cover_url` exists and no new file is selected, show a small thumbnail of the current cover above the file input.
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `src/pages/admin/AdminLayout.tsx` | Rewrite (add mobile drawer + new nav item) |
-| `src/pages/admin/CoinPackageManager.tsx` | Create (new CRUD page) |
-| `src/pages/admin/SeriesManager.tsx` | Update (add search, pagination, delete confirm) |
-| `src/pages/admin/EpisodeManager.tsx` | Update (add search, pagination, delete confirm) |
-| `src/pages/admin/UserManager.tsx` | Update (add search, pagination, admin toggle confirm) |
-| `src/pages/admin/CategoryManager.tsx` | Update (add search, pagination, delete confirm) |
-| `src/App.tsx` | Update (add packages route) |
+| `src/pages/admin/SeriesForm.tsx` | Rewrite (full form page) |
+| `src/pages/admin/SeriesManager.tsx` | Update (remove dialog, use links) |
 
-## No Database or Edge Function Changes
+## No Database Changes
 
-The `coin_packages` table already exists with proper RLS policies (admin CRUD, public read of active packages). No migrations needed.
+All tables and policies already exist.
 
