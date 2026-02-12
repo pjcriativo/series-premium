@@ -16,7 +16,7 @@ const BottomNav = () => {
   const visibleTabs = tabs.filter((t) => !t.auth || user);
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around border-t border-border bg-card/95 backdrop-blur-md py-2 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around bg-black/60 backdrop-blur-md py-2 md:hidden">
       {visibleTabs.map((tab) => (
         <NavLink
           key={tab.to}
