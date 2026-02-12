@@ -56,22 +56,30 @@ Deno.serve(async (req) => {
       }
 
       const targetUserId = body.target_user_id;
-      const coins = body.coins;
+      const coins = body.coins; // positive = credit, negative = debit
 
       const { data: wallet } = await supabaseAdmin.from("wallets").select("balance").eq("user_id", targetUserId).single();
       if (!wallet) throw new Error("Wallet not found");
 
-      await supabaseAdmin.from("wallets").update({ balance: wallet.balance + coins }).eq("user_id", targetUserId);
+      const newBalance = wallet.balance + coins;
+      if (newBalance < 0) {
+        return new Response(
+          JSON.stringify({ error: "Saldo insuficiente" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      await supabaseAdmin.from("wallets").update({ balance: newBalance }).eq("user_id", targetUserId);
       await supabaseAdmin.from("transactions").insert({
         user_id: targetUserId,
-        type: "credit",
+        type: coins > 0 ? "credit" : "debit",
         reason: "admin_adjust",
-        coins,
+        coins: Math.abs(coins),
         ref_id: user.id,
       });
 
       return new Response(
-        JSON.stringify({ success: true, coins_added: coins, new_balance: wallet.balance + coins }),
+        JSON.stringify({ success: true, coins_adjusted: coins, new_balance: newBalance }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
