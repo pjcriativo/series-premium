@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Lock, Coins, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { unlockEpisode, unlockSeries } from "@/lib/unlockService";
 
 interface PaywallModalProps {
   open: boolean;
@@ -13,32 +13,64 @@ interface PaywallModalProps {
   episodeId: string;
   priceCoin: number;
   balance: number;
+  seriesId?: string;
+  seriesTitle?: string;
+  seriesTotalCost?: number;
   onUnlocked: () => void;
+  onNavigateToWatch?: (episodeId: string) => void;
 }
 
-const PaywallModal = ({ open, onOpenChange, episodeTitle, episodeId, priceCoin, balance, onUnlocked }: PaywallModalProps) => {
+const PaywallModal = ({
+  open,
+  onOpenChange,
+  episodeTitle,
+  episodeId,
+  priceCoin,
+  balance,
+  seriesId,
+  seriesTitle,
+  seriesTotalCost,
+  onUnlocked,
+  onNavigateToWatch,
+}: PaywallModalProps) => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
-  const canAfford = balance >= priceCoin;
+  const [loading, setLoading] = useState<"episode" | "series" | null>(null);
 
-  const handleUnlock = async () => {
-    setLoading(true);
+  const canAffordEpisode = balance >= priceCoin;
+  const canAffordSeries = seriesTotalCost != null && seriesTotalCost > 0 && balance >= seriesTotalCost;
+  const showSeriesOption = seriesId && seriesTotalCost != null && seriesTotalCost > 0 && seriesTotalCost !== priceCoin;
+
+  const handleUnlockEpisode = async () => {
+    setLoading("episode");
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await supabase.functions.invoke("unlock-episode", {
-        body: { episode_id: episodeId },
-        headers: { Authorization: `Bearer ${session?.access_token}` },
-      });
-      if (res.error) throw res.error;
+      await unlockEpisode(episodeId);
       toast({ title: "Desbloqueado!", description: "Aproveite o episódio." });
+      onOpenChange(false);
+      onUnlocked();
+      if (onNavigateToWatch) onNavigateToWatch(episodeId);
+    } catch (err: any) {
+      toast({ title: "Erro", description: err.message || "Não foi possível desbloquear.", variant: "destructive" });
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleUnlockSeries = async () => {
+    if (!seriesId) return;
+    setLoading("series");
+    try {
+      await unlockSeries(seriesId);
+      toast({ title: "Série desbloqueada!", description: "Todos os episódios disponíveis." });
       onOpenChange(false);
       onUnlocked();
     } catch (err: any) {
       toast({ title: "Erro", description: err.message || "Não foi possível desbloquear.", variant: "destructive" });
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   };
+
+  const canAffordAny = canAffordEpisode || canAffordSeries;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -46,20 +78,34 @@ const PaywallModal = ({ open, onOpenChange, episodeTitle, episodeId, priceCoin, 
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-5 w-5 text-primary" />
-            Desbloquear Episódio
+            Desbloquear Conteúdo
           </DialogTitle>
           <DialogDescription>{episodeTitle}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* Episode price */}
           <div className="flex items-center justify-between text-sm">
-            <span className="text-muted-foreground">Preço</span>
+            <span className="text-muted-foreground">Episódio</span>
             <span className="font-semibold flex items-center gap-1">
               <Coins className="h-4 w-4 text-primary" />
               {priceCoin} moedas
             </span>
           </div>
-          <div className="flex items-center justify-between text-sm">
+
+          {/* Series price */}
+          {showSeriesOption && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Série completa</span>
+              <span className="font-semibold flex items-center gap-1">
+                <Coins className="h-4 w-4 text-primary" />
+                {seriesTotalCost} moedas
+              </span>
+            </div>
+          )}
+
+          {/* Balance */}
+          <div className="flex items-center justify-between text-sm border-t border-border pt-3">
             <span className="text-muted-foreground">Seu saldo</span>
             <span className="font-semibold flex items-center gap-1">
               <Coins className="h-4 w-4 text-primary" />
@@ -67,15 +113,38 @@ const PaywallModal = ({ open, onOpenChange, episodeTitle, episodeId, priceCoin, 
             </span>
           </div>
 
-          {canAfford ? (
-            <Button onClick={handleUnlock} disabled={loading} className="w-full rounded-full">
-              {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
-              Desbloquear por {priceCoin} moedas
-            </Button>
+          {/* Actions */}
+          {canAffordAny ? (
+            <div className="space-y-2">
+              {canAffordEpisode && (
+                <Button
+                  onClick={handleUnlockEpisode}
+                  disabled={!!loading}
+                  className="w-full rounded-full"
+                  variant="secondary"
+                >
+                  {loading === "episode" && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Desbloquear episódio — {priceCoin} moedas
+                </Button>
+              )}
+              {showSeriesOption && canAffordSeries && (
+                <Button
+                  onClick={handleUnlockSeries}
+                  disabled={!!loading}
+                  className="w-full rounded-full"
+                >
+                  {loading === "series" && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                  Desbloquear série — {seriesTotalCost} moedas
+                </Button>
+              )}
+            </div>
           ) : (
             <div className="space-y-2">
               <p className="text-sm text-destructive text-center">Saldo insuficiente</p>
-              <Button onClick={() => { onOpenChange(false); navigate("/wallet"); }} className="w-full rounded-full">
+              <Button
+                onClick={() => { onOpenChange(false); navigate("/wallet"); }}
+                className="w-full rounded-full"
+              >
                 Comprar moedas
               </Button>
             </div>

@@ -190,6 +190,8 @@ const Index = () => {
           episodeId={paywallEpisode.id}
           priceCoin={paywallEpisode.price_coins}
           balance={wallet?.balance ?? 0}
+          seriesId={paywallEpisode.series_id}
+          seriesTitle={paywallEpisode.series_title}
           onUnlocked={handleUnlocked}
         />
       )}

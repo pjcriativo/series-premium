@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
+import { unlockEpisode as unlockEpisodeService } from "@/lib/unlockService";
 import { useEffect, useRef, useState, useCallback } from "react";
 
 export const useEpisodePlayer = () => {
@@ -252,12 +253,7 @@ export const useEpisodePlayer = () => {
     if (profile?.auto_unlock && walletBalance >= nextEpisode.price_coins) {
       setAutoUnlocking(true);
       try {
-        const { data: { session: s } } = await supabase.auth.getSession();
-        const res = await supabase.functions.invoke("unlock-episode", {
-          body: { episode_id: nextEpisode.id },
-          headers: { Authorization: `Bearer ${s?.access_token}` },
-        });
-        if (res.error) throw res.error;
+        await unlockEpisodeService(nextEpisode.id);
         queryClient.invalidateQueries({ queryKey: ["wallet"] });
         queryClient.invalidateQueries({ queryKey: ["episode-unlock", nextEpisode.id] });
         navigate(`/watch/${nextEpisode.id}`);
