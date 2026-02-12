@@ -1,60 +1,44 @@
 
 
-# Add Visual Covers to All Demo Series
+# Add Cover Images to Hero Slider Banners
 
 ## Overview
 
-All 21 demo series currently have no `cover_url` set. Only 3 have local fallback images via `demo-covers.ts`. We will update the database directly to give every series a visually distinct placeholder cover using free stock image URLs, so the home page cards look polished immediately.
-
-## Approach
-
-Use a data UPDATE (not a schema migration) to set `cover_url` on all 21 demo series using high-quality placeholder images from `picsum.photos`. Each series gets a unique image by using a different seed, producing consistent, visually distinct covers.
-
-### URLs format
-```
-https://picsum.photos/seed/{series-title-slug}/400/600
-```
-
-This gives each series a unique, deterministic 400x600 image (portrait aspect ratio matching the 2/3 card ratio).
+The 3 seeded banners currently have no `image_url`, so the hero slider shows a plain gradient fallback. We will update each banner with a wide landscape placeholder image from `picsum.photos` to make the slider visually attractive.
 
 ## Changes
 
-### 1. Data update: Set `cover_url` for all 21 demo series
+### Database data update only -- no code changes
 
-Run UPDATE statements for each series:
+Update `image_url` for the 3 existing banners using wide (1200x500) picsum images with unique seeds:
 
-| Series | Cover URL |
+| Banner | Image URL |
 |--------|-----------|
-| Amor em Chamas | `https://picsum.photos/seed/amor-em-chamas/400/600` |
-| Coracoes Cruzados | `https://picsum.photos/seed/coracoes-cruzados/400/600` |
-| Promessas ao Luar | `https://picsum.photos/seed/promessas-ao-luar/400/600` |
-| Sombras do Passado | `https://picsum.photos/seed/sombras-do-passado/400/600` |
-| O Ultimo Segredo | `https://picsum.photos/seed/ultimo-segredo/400/600` |
-| Zona de Risco | `https://picsum.photos/seed/zona-de-risco/400/600` |
-| Confusoes em Familia | `https://picsum.photos/seed/confusoes-familia/400/600` |
-| Plantao Maluco | `https://picsum.photos/seed/plantao-maluco/400/600` |
-| Vizinhos Impossiveis | `https://picsum.photos/seed/vizinhos-impossiveis/400/600` |
-| Alem do Horizonte | `https://picsum.photos/seed/alem-horizonte/400/600` |
-| Lacos de Sangue | `https://picsum.photos/seed/lacos-sangue/400/600` |
-| A Ultima Chance | `https://picsum.photos/seed/ultima-chance/400/600` |
-| Operacao Resgate | `https://picsum.photos/seed/operacao-resgate/400/600` |
-| Fogo Cruzado | `https://picsum.photos/seed/fogo-cruzado/400/600` |
-| Cacadores de Elite | `https://picsum.photos/seed/cacadores-elite/400/600` |
-| Reinos Perdidos | `https://picsum.photos/seed/reinos-perdidos/400/600` |
-| A Profecia do Dragao | `https://picsum.photos/seed/profecia-dragao/400/600` |
-| A Casa no Fim da Rua | `https://picsum.photos/seed/casa-fim-rua/400/600` |
-| Sussurros na Escuridao | `https://picsum.photos/seed/sussurros-escuridao/400/600` |
-| Geracao Z | `https://picsum.photos/seed/geracao-z/400/600` |
-| Ultimo Ano | `https://picsum.photos/seed/ultimo-ano/400/600` |
+| Amor em Chamas | `https://picsum.photos/seed/banner-amor/1200/500` |
+| Sombras do Passado | `https://picsum.photos/seed/banner-sombras/1200/500` |
+| Confusoes em Familia | `https://picsum.photos/seed/banner-confusoes/1200/500` |
 
-### 2. No code changes needed
+The 1200x500 aspect ratio matches the hero slider's 21/9 desktop ratio well and loads quickly.
 
-The `SeriesCard` component already renders `cover_url` when available via the `getSeriesCover` helper. Once the database has URLs, the cards will display images automatically.
+### SQL
+
+```sql
+UPDATE banners SET image_url = CASE id
+  WHEN 'b0000001-0000-4000-8000-000000000001' THEN 'https://picsum.photos/seed/banner-amor/1200/500'
+  WHEN 'b0000001-0000-4000-8000-000000000002' THEN 'https://picsum.photos/seed/banner-sombras/1200/500'
+  WHEN 'b0000001-0000-4000-8000-000000000003' THEN 'https://picsum.photos/seed/banner-confusoes/1200/500'
+END
+WHERE id IN (
+  'b0000001-0000-4000-8000-000000000001',
+  'b0000001-0000-4000-8000-000000000002',
+  'b0000001-0000-4000-8000-000000000003'
+);
+```
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| Database (data update) | Set `cover_url` on 21 series rows |
+| Database (data update) | Set `image_url` on 3 banner rows |
 | No code files changed | -- |
 
