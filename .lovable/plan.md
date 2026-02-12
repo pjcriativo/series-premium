@@ -1,38 +1,36 @@
 
 
-# Redirecionar Admin para Painel Admin apos Login
+# Navegacao Admin: Links para voltar ao painel e acessar o site
 
 ## O que muda
 
-Quando um usuario com role `admin` fizer login, ele sera redirecionado automaticamente para `/admin` em vez de `/` (home). De dentro do painel admin, ele podera acessar seu perfil de usuario.
+Duas melhorias na navegacao do painel admin:
+
+1. **Link "Ver Site"** no menu lateral do admin - abre a pagina inicial (`/`) sem precisar fazer logout
+2. **Botao "Voltar ao Admin"** na pagina de perfil (`/me`) - visivel apenas para admins, permite retornar ao painel rapidamente
 
 ## Mudancas
 
-### 1. Redirect pos-login baseado no role (Auth.tsx)
+### 1. AdminLayout.tsx - Adicionar link "Ver Site"
 
-Apos login bem-sucedido, verificar se o usuario e admin antes de redirecionar:
-- Se admin -> redireciona para `/admin`
-- Se usuario normal -> redireciona para `/`
+Adicionar um item no menu lateral (abaixo dos itens existentes ou como link separado proximo ao botao "Sair") com icone `ExternalLink` ou `Globe` apontando para `/`, permitindo ao admin visitar o site principal.
 
-Isso se aplica tanto ao login por email/senha quanto ao redirect automatico quando o usuario ja esta logado.
+### 2. Profile.tsx - Adicionar botao "Voltar ao Admin"
 
-### 2. Adicionar link "Meu Perfil" no menu lateral do Admin (AdminLayout.tsx)
-
-Adicionar um item de navegacao no sidebar/drawer do admin para acessar `/me` (perfil do usuario), permitindo que o admin acesse seu perfil sem sair do contexto admin.
+Como o componente ja tem acesso ao `isAdmin` via `useAuth()`, basta adicionar um botao/link condicional no topo da pagina que aparece apenas para admins, redirecionando para `/admin`.
 
 ## Detalhes Tecnicos
 
-### Auth.tsx
-- No `handleSubmit` caso `login`: apos `signIn`, consultar `user_roles` para verificar se e admin e redirecionar para `/admin` ou `/`
-- No `useEffect` de redirect automatico (linha 46-49): verificar `isAdmin` do hook `useAuth` e redirecionar de acordo
-
 ### AdminLayout.tsx
-- Adicionar item `{ to: "/me", icon: User, label: "Meu Perfil" }` na lista `navItems` ou como link separado proximo ao botao "Sair"
+- Adicionar `{ to: "/", icon: Globe, label: "Ver Site" }` na lista `navItems` (ou como link separado para diferenciar visualmente)
+- Importar icone `Globe` do lucide-react
 
-### Arquivos modificados
+### Profile.tsx
+- Adicionar um `Link` para `/admin` com icone `ShieldCheck` (ja importado) no topo da pagina, renderizado condicionalmente com `{isAdmin && ...}`
+- Texto: "Voltar ao Painel Admin"
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/Auth.tsx` | Modificar - redirect condicional pos-login |
-| `src/pages/admin/AdminLayout.tsx` | Modificar - adicionar link para perfil |
+| `src/pages/admin/AdminLayout.tsx` | Adicionar link "Ver Site" no menu |
+| `src/pages/Profile.tsx` | Adicionar botao "Voltar ao Admin" para admins |
 
