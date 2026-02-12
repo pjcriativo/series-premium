@@ -1,112 +1,95 @@
 
 
-# Edge Function: Stripe Webhook
+# Deploy Checklist + Domain Configuration
 
 ## Overview
 
-Create a new edge function `stripe-webhook` that receives Stripe `checkout.session.completed` events, verifies the webhook signature, enforces idempotency (no double-crediting), and credits the user's wallet with the purchased coins.
+Prepare the app for production deployment by updating metadata, validating all environment configurations, and providing a step-by-step checklist for external services (Supabase, Google OAuth, Stripe, Domain).
 
-The function will be "ready but gated" -- it checks for the `STRIPE_WEBHOOK_SECRET` env var and returns 501 if not configured, so it can be deployed safely before Stripe is fully set up.
+## Code Changes
 
-## Changes
+### 1. `index.html` -- Update metadata
 
-### 1. New file: `supabase/functions/stripe-webhook/index.ts`
+Replace placeholder titles and descriptions with actual app branding:
 
-**Flow:**
+- `<title>` -> "ReelShort"
+- `og:title` -> "ReelShort"
+- `og:description` -> "Series curtas e envolventes para maratonar a qualquer momento"
+- `meta description` -> same
+- `meta author` -> your brand name
+- Remove the TODO comments
+- Replace `og:image` and `twitter:image` with your own social preview image URL (or keep for now)
 
-1. Only accept POST requests
-2. Check if `STRIPE_WEBHOOK_SECRET` is set; if not, return 501 ("Stripe not configured")
-3. Read raw body and verify Stripe signature using `stripe-signature` header and HMAC-SHA256 (no Stripe SDK needed -- use Web Crypto API directly)
-4. Parse event JSON, only handle `checkout.session.completed`
-5. Extract from session metadata: `user_id` and `package_id`
-6. **Idempotency check**: query `transactions` where `ref_id = event.id` -- if found, return 200 (already processed)
-7. Look up `coin_packages` by `package_id` to get coin amount
-8. Update wallet balance
-9. Insert transaction with `type: "credit"`, `reason: "purchase"`, `ref_id: event.id`
-10. Return 200
+### 2. `supabase/config.toml` -- Add buy-coins function
 
-**Signature verification (no SDK):**
-
-```text
-Stripe sends: Stripe-Signature: t=timestamp,v1=signature
-We compute: HMAC-SHA256(STRIPE_WEBHOOK_SECRET, "timestamp.rawBody")
-Compare against the v1 signature
-```
-
-This avoids importing the full Stripe SDK just for signature verification.
-
-**Env gating:**
-
-```text
-if (!STRIPE_WEBHOOK_SECRET) return 501 "Stripe not configured yet"
-```
-
-### 2. Update: `supabase/config.toml`
-
-Add the webhook function with `verify_jwt = false` (Stripe sends unsigned requests):
+The `buy-coins` edge function is missing from config.toml. Add it:
 
 ```toml
-[functions.stripe-webhook]
+[functions.buy-coins]
 verify_jwt = false
 ```
 
-### 3. No database changes
+This ensures it deploys correctly alongside the other functions.
 
-The existing `transactions` table already has `ref_id` (text) which will store the Stripe event ID for idempotency. The `wallets` table and all RLS policies are already in place. The edge function uses the service role key so RLS is bypassed.
+### 3. No base path changes needed
 
-### 4. No secrets added yet
+Vite is configured with default base `/`, which is correct for Lovable deploy. BrowserRouter uses `/` as well. SPA routing is handled by the hosting platform automatically.
 
-The function requires `STRIPE_WEBHOOK_SECRET` to operate. Without it, the function gracefully returns 501. When the user is ready to connect Stripe, they will add this secret. The function code is safe to deploy now.
+## Validation Status
 
-## Technical Details
+| Item | Status | Notes |
+|------|--------|-------|
+| Supabase URL + Anon Key | OK | Hardcoded in `client.ts`, correct for this project |
+| Service Role Key (edge fns) | OK | Set as Supabase secret |
+| Storage bucket: `covers` (public) | OK | Already created |
+| Storage bucket: `videos` (private) | OK | Already created |
+| Edge functions deployed | OK | `unlock-episode`, `buy-coins`, `stripe-webhook` |
+| SPA routing | OK | BrowserRouter with `/`, Lovable handles fallback |
+| Build config | OK | Vite default, no base path issues |
 
-### Signature Verification (Web Crypto)
+## External Configuration Checklist (Manual Steps)
 
-```typescript
-const sigHeader = req.headers.get("stripe-signature");
-// Parse t= and v1= from header
-const parts = Object.fromEntries(
-  sigHeader.split(",").map(p => {
-    const [k, v] = p.split("=");
-    return [k, v];
-  })
-);
-const payload = `${parts.t}.${rawBody}`;
-const key = await crypto.subtle.importKey(
-  "raw",
-  new TextEncoder().encode(secret),
-  { name: "HMAC", hash: "SHA-256" },
-  false,
-  ["sign"]
-);
-const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-const computed = Array.from(new Uint8Array(sig))
-  .map(b => b.toString(16).padStart(2, "0"))
-  .join("");
-if (computed !== parts.v1) return 400 "Invalid signature";
-```
+These are actions you need to do outside of Lovable:
 
-### Idempotency Check
+### Google OAuth
 
-```typescript
-const { data: existing } = await supabaseAdmin
-  .from("transactions")
-  .select("id")
-  .eq("ref_id", event.id)
-  .maybeSingle();
-if (existing) return 200 "Already processed";
-```
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) -> APIs & Services -> Credentials
+2. In your OAuth 2.0 Client, add to **Authorized redirect URLs**:
+   - `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
+3. Add to **Authorized JavaScript origins**:
+   - Your published Lovable URL (e.g., `https://your-app.lovable.app`)
+   - Your custom domain (e.g., `https://yourdomain.com`)
+4. In [Supabase Dashboard -> Auth -> URL Configuration](https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/url-configuration):
+   - Set **Site URL** to your production URL
+   - Add redirect URLs for your custom domain
 
-### Expected Stripe Session Metadata
+### Stripe (when ready)
 
-When creating a Checkout Session (future integration), the client will pass:
-- `metadata.user_id` -- the Supabase user ID
-- `metadata.package_id` -- the coin_packages ID
+1. Get your **Webhook Signing Secret** from the Stripe Dashboard -> Developers -> Webhooks
+2. Create a webhook endpoint pointing to:
+   - `https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/stripe-webhook`
+3. Subscribe to the event: `checkout.session.completed`
+4. Add the signing secret as a Supabase secret named `STRIPE_WEBHOOK_SECRET` via the [Edge Functions Secrets page](https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/settings/functions)
+5. Optionally add `STRIPE_SECRET_KEY` if you implement server-side Checkout Session creation
+
+### Custom Domain
+
+1. In Lovable: go to Project Settings -> Domains -> Connect Domain
+2. At your domain registrar, add:
+   - **A record**: `@` -> `185.158.133.1`
+   - **A record**: `www` -> `185.158.133.1`
+   - **TXT record**: `_lovable` -> the verification value Lovable provides
+3. Wait for DNS propagation (up to 72h)
+4. SSL is provisioned automatically by Lovable
+5. After domain is active, update:
+   - Supabase Auth -> Site URL to your custom domain
+   - Google OAuth -> add custom domain to authorized origins and redirects
+   - Stripe webhook -> no change needed (uses Supabase function URL directly)
 
 ## Files Summary
 
 | File | Action |
 |------|--------|
-| `supabase/functions/stripe-webhook/index.ts` | Create |
-| `supabase/config.toml` | Update (add function entry) |
+| `index.html` | Update metadata (title, og tags, descriptions) |
+| `supabase/config.toml` | Add `buy-coins` function entry |
 
