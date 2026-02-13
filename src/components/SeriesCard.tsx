@@ -18,7 +18,7 @@ const SeriesCard = React.forwardRef<HTMLAnchorElement, SeriesCardProps>(
       <Link
         ref={ref}
         to={`/series/${series.id}`}
-        className="group flex-shrink-0 w-36 md:w-44 snap-start"
+        className="group block w-full transition-transform duration-300 hover:scale-105"
       >
         <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-2">
           {(() => {
