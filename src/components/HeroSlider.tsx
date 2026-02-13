@@ -10,6 +10,7 @@ interface Banner {
   subtitle: string | null;
   image_url: string | null;
   link_series_id: string | null;
+  first_episode_id?: string | null;
   series?: { id: string; title: string } | null;
 }
 
@@ -70,7 +71,7 @@ const HeroSlider = React.forwardRef<HTMLDivElement, HeroSliderProps>(
                     )}
                     {banner.link_series_id && (
                       <button
-                        onClick={() => navigate(`/series/${banner.link_series_id}`)}
+                        onClick={() => navigate(banner.first_episode_id ? `/watch/${banner.first_episode_id}` : `/series/${banner.link_series_id}`)}
                         className="mt-4 px-8 py-3 bg-white text-black rounded-md font-semibold inline-flex items-center gap-2 w-fit hover:bg-gray-200 transition"
                       >
                         <Play className="h-5 w-5 fill-black" /> Assistir

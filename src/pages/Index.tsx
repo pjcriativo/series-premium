@@ -51,6 +51,30 @@ const Index = () => {
         .eq("is_active", true)
         .order("sort_order");
       if (error) throw error;
+
+      // Fetch first episode for each banner's series
+      const seriesIds = (data || [])
+        .map((b: any) => b.link_series_id)
+        .filter(Boolean);
+      
+      if (seriesIds.length > 0) {
+        const { data: episodes } = await supabase
+          .from("episodes")
+          .select("id, series_id")
+          .in("series_id", seriesIds)
+          .eq("is_published", true)
+          .eq("episode_number", 1);
+        
+        const episodeMap = new Map(
+          (episodes || []).map((ep: any) => [ep.series_id, ep.id])
+        );
+        
+        return (data || []).map((b: any) => ({
+          ...b,
+          first_episode_id: b.link_series_id ? episodeMap.get(b.link_series_id) || null : null,
+        }));
+      }
+
       return data;
     },
   });
