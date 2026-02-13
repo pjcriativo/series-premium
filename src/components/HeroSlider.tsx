@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import useEmblaCarousel from "embla-carousel-react";
 import Autoplay from "embla-carousel-autoplay";
@@ -21,9 +21,8 @@ const HeroSlider = ({ banners }: HeroSliderProps) => {
   const navigate = useNavigate();
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
-    Autoplay({ delay: 5000, stopOnInteraction: false }),
-  ]);
+  const autoplay = useRef(Autoplay({ delay: 5000, stopOnInteraction: false }));
+  const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [autoplay.current]);
 
   const onSelect = useCallback(() => {
     if (!emblaApi) return;
