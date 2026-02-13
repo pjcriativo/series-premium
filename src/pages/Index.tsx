@@ -34,7 +34,7 @@ const Index = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("series")
-        .select("id, title, cover_url, category_id, categories:category_id(name), episodes(id)")
+        .select("id, title, cover_url, synopsis, category_id, categories:category_id(name), episodes(id)")
         .eq("is_published", true)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -64,6 +64,7 @@ const Index = () => {
         ...s,
         category_name: catName,
         episode_count: s.episodes?.length || 0,
+        synopsis: s.synopsis,
       });
     });
     return Object.values(groups);

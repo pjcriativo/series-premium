@@ -10,6 +10,7 @@ interface CategoryRowProps {
     cover_url: string | null;
     category_name?: string | null;
     episode_count?: number;
+    synopsis?: string | null;
   }[];
 }
 
