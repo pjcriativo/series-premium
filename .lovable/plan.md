@@ -1,94 +1,29 @@
 
-# Adicionar Navbar com Menu e Hover Card no Perfil
+# Alinhar Navbar com o Topo do Slider (Estilo ReelShort)
 
-## O Que Sera Feito
+## Problema Atual
+- O HeroSlider tem padding (`px-4 md:px-8 pt-4`), `max-w-7xl`, e `rounded-lg`, criando um layout de "card" com espaco ao redor
+- Isso faz a navbar parecer desalinhada/torta em relacao ao slider
+- No site original, o slider e full-width (borda a borda) e a navbar fica sobreposta diretamente sobre ele
 
-Replicar a navbar do ReelShort original com:
+## Alteracoes
 
-1. **Menu de navegacao horizontal** no topo: Logo, Inicio, Categorias, etc.
-2. **Hover card no avatar/perfil** que mostra um mini painel ao passar o mouse, com:
-   - Avatar + nome ("Convidado" ou email do usuario)
-   - Botao "Login" (se nao logado)
-   - Saldo de moedas e bonus
-   - Botao "Completar" (link para loja de moedas)
-   - Funciona tanto para visitantes nao logados quanto para usuarios logados
+### 1. HeroSlider.tsx - Remover padding e bordas arredondadas
+- Remover `px-4 md:px-8 pt-4` do container externo
+- Remover `max-w-7xl mx-auto` e `rounded-lg` da section
+- O slider deve ocupar 100% da largura, sem bordas arredondadas, permitindo que a navbar fique sobreposta naturalmente
 
-## Detalhes da Implementacao
+### 2. Index.tsx - Sem padding-top extra
+- Garantir que o `<main>` nao tenha padding-top que empurre o slider para baixo da navbar
+- O slider deve comecar no topo absoluto da pagina, atras da navbar transparente
 
-### Navbar Redesenhada
-
-A navbar atual e minimalista (logo + icones). Sera expandida para incluir links de navegacao como no site original:
-
-- **Logo** ReelShort (esquerda)
-- **Links**: Inicio, Categorias (links de navegacao)
-- **Direita**: Icone de busca, avatar com hover card
-
-### Hover Card do Perfil
-
-Usando o componente `HoverCard` do Radix (ja instalado no projeto), ao passar o mouse sobre o avatar:
-
-**Se nao logado:**
-- Avatar generico + "Convidado"
-- Botao "Login" ao lado
-- Moedas: 0 | Bonus: 0
-- Botao vermelho "Completar" (redireciona para /auth)
-
-**Se logado:**
-- Avatar com inicial + email/nome
-- Moedas: saldo real da carteira
-- Bonus: 0 (placeholder)
-- Botao vermelho "Completar" (redireciona para /wallet)
-
-### Mobile
-
-No mobile, a navbar mantem o formato atual compacto (logo + icones) pois a navegacao principal e feita pelo BottomNav. O hover card nao aparece no mobile (hover nao existe em touch).
+## Resultado Esperado
+- O slider ocupa toda a largura da tela, do topo ao limite inferior da imagem
+- A navbar (ja `fixed top-0` com `bg-transparent`) fica sobreposta sobre o slider
+- O gradiente superior do slider cria a transicao suave para a navbar ficar legivel
 
 ## Arquivos Afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/Navbar.tsx` | Redesenho completo: adicionar links de navegacao + HoverCard no avatar com saldo de moedas |
-
-## Detalhes Tecnicos
-
-### Estrutura da Navbar
-
-```
-<nav>
-  <!-- Esquerda: Logo + Links (hidden no mobile) -->
-  <div>
-    <Link to="/">ReelShort</Link>
-    <Link to="/">Inicio</Link>
-    <Link to="/search">Categorias</Link>
-  </div>
-
-  <!-- Direita: Busca + Avatar com HoverCard -->
-  <div>
-    <SearchIcon />
-    <HoverCard>
-      <HoverCardTrigger>
-        <Avatar /> <!-- sempre visivel, logado ou nao -->
-      </HoverCardTrigger>
-      <HoverCardContent>
-        <!-- Mini painel com saldo e acoes -->
-      </HoverCardContent>
-    </HoverCard>
-  </div>
-</nav>
-```
-
-### HoverCard Content
-
-```
-+----------------------------------+
-| [Avatar]  Convidado    [Login]   |
-|           UID xxx               |
-|                                  |
-|   🪙 0          🪙 0            |
-|   Moedas        Bonus           |
-|                                  |
-|   [=== Completar ===]           |
-+----------------------------------+
-```
-
-O componente `HoverCard` do Radix ja esta disponivel em `src/components/ui/hover-card.tsx`. O avatar sera sempre renderizado (mesmo sem login), servindo como trigger do hover card.
+| `src/components/HeroSlider.tsx` | Remover padding, max-width e rounded corners do container |
