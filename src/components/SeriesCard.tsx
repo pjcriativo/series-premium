@@ -39,11 +39,6 @@ const SeriesCard = React.forwardRef<HTMLAnchorElement, SeriesCardProps>(
             );
           })()}
           <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          {series.category_name && (
-            <span className="absolute top-2 left-2 bg-primary/90 text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded">
-              {series.category_name}
-            </span>
-          )}
         </div>
         <h3 className="text-sm font-medium text-foreground truncate">{series.title}</h3>
         {series.episode_count !== undefined && (

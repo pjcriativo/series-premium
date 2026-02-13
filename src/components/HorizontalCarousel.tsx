@@ -38,7 +38,7 @@ const HorizontalCarousel: React.FC<HorizontalCarouselProps> = ({ title, children
     const container = scrollRef.current;
     if (!container || !container.firstElementChild) return;
 
-    const gap = 12; // gap-3
+    const gap = 16; // gap-4
     const cardWidth = (container.firstElementChild as HTMLElement).offsetWidth + gap;
     const w = window.innerWidth;
     const visibleCards = w >= 1024 ? 7 : w >= 768 ? 4 : 2;
@@ -51,22 +51,27 @@ const HorizontalCarousel: React.FC<HorizontalCarouselProps> = ({ title, children
   };
 
   return (
-    <section className="mb-8">
-      <h2 className="text-lg font-bold text-foreground mb-3 px-4">{title}</h2>
+    <section className="mb-10">
+      <div className="flex items-center justify-between mb-3 px-4">
+        <h2 className="text-xl font-bold text-foreground">{title}</h2>
+        <span className="text-sm text-muted-foreground hover:text-foreground cursor-pointer transition-colors">
+          Ver tudo &gt;
+        </span>
+      </div>
       <div className="relative group/carousel">
         {canScrollLeft && (
           <button
             onClick={() => scroll("left")}
-            className="absolute left-1 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover/carousel:opacity-100 transition-opacity"
+            className="absolute left-1 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition-opacity"
             aria-label="Anterior"
           >
-            <ChevronLeft className="h-5 w-5" />
+            <ChevronLeft className="h-6 w-6" />
           </button>
         )}
 
         <div
           ref={scrollRef}
-          className="flex gap-3 overflow-x-hidden px-4 pb-2"
+          className="flex gap-4 overflow-x-hidden px-4 pb-2"
         >
           {children}
         </div>
@@ -74,10 +79,10 @@ const HorizontalCarousel: React.FC<HorizontalCarouselProps> = ({ title, children
         {canScrollRight && (
           <button
             onClick={() => scroll("right")}
-            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 bg-black/50 hover:bg-black/80 text-white p-2 rounded-full opacity-0 group-hover/carousel:opacity-100 transition-opacity"
+            className="absolute right-1 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white p-3 rounded-full transition-opacity"
             aria-label="Próximo"
           >
-            <ChevronRight className="h-5 w-5" />
+            <ChevronRight className="h-6 w-6" />
           </button>
         )}
       </div>

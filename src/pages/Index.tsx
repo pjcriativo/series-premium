@@ -103,7 +103,7 @@ const Index = () => {
                       return (
                         <div
                           key={item.series_id}
-                          className="w-[calc((100%_-_0.75rem)/2)] md:w-[calc((100%_-_2.25rem)/4)] lg:w-[calc((100%_-_4.5rem)/7)] flex-shrink-0"
+                          className="w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_3rem)/4)] lg:w-[calc((100%_-_6rem)/7)] flex-shrink-0"
                         >
                           <Link
                             to={`/series/${item.series.id}`}
@@ -138,7 +138,7 @@ const Index = () => {
               </div>
             )}
 
-            <div className="mt-6 space-y-2 w-full flex justify-center px-4 md:px-6">
+            <div className="mt-6 space-y-4 w-full flex justify-center px-4 md:px-6">
               <div className="w-full max-w-7xl">
                 {categoryGroups.map((group) => (
                   <CategoryRow key={group.name} title={group.name} series={group.series} />
