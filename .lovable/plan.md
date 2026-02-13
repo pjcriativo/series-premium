@@ -1,25 +1,48 @@
 
 
-# Ajustar Gradientes do Hero Slider
+# Corrigir Tela Preta / Loop de Carregamento no Hero Slider
 
-## Problema Atual
+## Causa Raiz
 
-Os gradientes superior e inferior tem a mesma altura (`h-20 md:h-32`) e intensidade. No site original do ReelShort, o fade inferior e mais pronunciado (para fundir suavemente com o conteudo abaixo) e o fade superior e mais sutil.
+O plugin `Autoplay({ delay: 5000, stopOnInteraction: false })` esta sendo recriado a cada render do componente `HeroSlider`. Isso faz o Embla Carousel destruir e reinicializar repetidamente. Durante re-renders rapidos (como mudancas de estado de autenticacao no refresh da pagina), o Embla tenta acessar elementos do DOM que ja foram removidos, causando o erro:
 
-## Alteracoes Propostas
+```
+TypeError: Cannot read properties of undefined (reading 'children')
+```
 
-### `src/components/HeroSlider.tsx`
+Esse erro nao e tratado (unhandled promise rejection), o que derruba toda a aplicacao e resulta na tela preta.
 
-| Gradiente | Atual | Novo |
-|-----------|-------|------|
-| Superior | `h-20 md:h-32` | `h-16 md:h-24` (menor, mais sutil) |
-| Inferior | `h-20 md:h-32` | `h-28 md:h-44` (maior, mais intenso) |
-| Inferior intensidade | `from-background to-transparent` | `from-background via-background/60 to-transparent` (fade mais forte) |
-| Laterais | sem alteracao | sem alteracao |
+## Solucao
 
-## Detalhes Tecnicos
+### Arquivo: `src/components/HeroSlider.tsx`
 
-Linha 88 - Fade superior: reduzir altura para `h-16 md:h-24`
+1. **Estabilizar o plugin Autoplay** usando `useRef` para que a instancia seja criada apenas uma vez, evitando reinicializacoes desnecessarias do carrossel.
 
-Linha 90 - Fade inferior: aumentar altura para `h-28 md:h-44` e adicionar `via-background/60` para intensificar a transicao, criando o efeito de "dissolucao" mais fiel ao original.
+2. **Adicionar tratamento de erro** com um guard no `useEffect` para evitar que o Embla tente operar em um estado invalido.
+
+### Antes (problema):
+```tsx
+const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
+  Autoplay({ delay: 5000, stopOnInteraction: false }),
+]);
+```
+
+### Depois (correcao):
+```tsx
+import { useRef } from "react";
+
+const autoplay = useRef(Autoplay({ delay: 5000, stopOnInteraction: false }));
+
+const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [autoplay.current]);
+```
+
+## Impacto
+
+- Elimina a tela preta ao atualizar a pagina
+- Elimina o loop de carregamento
+- Nao altera a aparencia ou comportamento visual do carrossel
+
+| Arquivo | Acao |
+|---------|------|
+| `src/components/HeroSlider.tsx` | Estabilizar plugin Autoplay com useRef |
 
