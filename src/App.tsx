@@ -7,6 +7,9 @@ import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import AdminRoute from "@/components/AdminRoute";
 import Index from "./pages/Index";
+import ReelsFeed from "./pages/ReelsFeed";
+import FanClub from "./pages/FanClub";
+import Brand from "./pages/Brand";
 import Auth from "./pages/Auth";
 import SeriesDetail from "./pages/SeriesDetail";
 import EpisodePlayer from "./pages/EpisodePlayer";
@@ -47,6 +50,9 @@ const App = () => (
 
             {/* Public routes */}
             <Route path="/" element={<Index />} />
+            <Route path="/reels" element={<ReelsFeed />} />
+            <Route path="/fan-club" element={<FanClub />} />
+            <Route path="/brand" element={<Brand />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/series/:id" element={<SeriesDetail />} />
 

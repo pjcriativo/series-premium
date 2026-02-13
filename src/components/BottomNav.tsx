@@ -1,10 +1,11 @@
-import { Home, Search, Coins, User } from "lucide-react";
+import { Home, Search, Coins, User, Clapperboard } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 
 const tabs = [
   { to: "/", icon: Home, label: "Home", end: true },
+  { to: "/reels", icon: Clapperboard, label: "Reels" },
   { to: "/search", icon: Search, label: "Buscar" },
   { to: "/wallet", icon: Coins, label: "Carteira", auth: true },
   { to: "/me", icon: User, label: "Perfil", auth: true },
