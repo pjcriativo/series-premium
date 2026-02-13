@@ -103,7 +103,7 @@ const Index = () => {
                       return (
                         <div
                           key={item.series_id}
-                          className="w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2.25rem)/4)] lg:w-[calc((100%-4.5rem)/7)] flex-shrink-0"
+                          className="w-[calc((100%_-_0.75rem)/2)] md:w-[calc((100%_-_2.25rem)/4)] lg:w-[calc((100%_-_4.5rem)/7)] flex-shrink-0"
                         >
                           <Link
                             to={`/series/${item.series.id}`}
