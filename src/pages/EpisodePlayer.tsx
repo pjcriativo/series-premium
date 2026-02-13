@@ -34,9 +34,11 @@ const EpisodePlayer = () => {
       <div className="min-h-screen bg-background">
         <Navbar />
         <main className="pt-16 px-4 lg:px-8">
-          <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto">
-            <Skeleton className="lg:w-3/5 aspect-video rounded-lg" />
-            <div className="lg:w-2/5 space-y-4">
+          <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
+            <div className="lg:w-[55%] flex justify-center lg:justify-end">
+              <Skeleton className="w-full max-w-md rounded-lg" style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }} />
+            </div>
+            <div className="lg:w-[45%] space-y-4">
               <Skeleton className="h-4 w-48" />
               <Skeleton className="h-6 w-64" />
               <Skeleton className="h-20 w-full" />
@@ -64,10 +66,13 @@ const EpisodePlayer = () => {
       <Navbar />
 
       <main className="pt-16 px-4 lg:px-8 pb-20 md:pb-8">
-        <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto">
-          {/* Left column - Video */}
-          <div className="lg:w-3/5">
-            <div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+        <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
+          {/* Left column - Vertical Video */}
+          <div className="lg:w-[55%] flex justify-center lg:justify-end">
+            <div
+              className="w-full max-w-md bg-black rounded-lg overflow-hidden relative"
+              style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }}
+            >
               {youtubeId ? (
                 <iframe
                   src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
@@ -95,7 +100,6 @@ const EpisodePlayer = () => {
                   {/* Video controls overlay */}
                   {!showEndScreen && (
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-4 pb-3 pt-8 space-y-2">
-                      {/* Progress bar */}
                       <div className="relative w-full h-1 bg-white/20 rounded-full overflow-hidden">
                         <div
                           className="absolute inset-y-0 left-0 bg-primary rounded-full transition-all"
@@ -171,7 +175,7 @@ const EpisodePlayer = () => {
           </div>
 
           {/* Right column - Info & Episode Grid */}
-          <div className="lg:w-2/5 space-y-5">
+          <div className="lg:w-[45%] space-y-5 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
             {/* Breadcrumb */}
             <Breadcrumb>
               <BreadcrumbList>
@@ -191,33 +195,43 @@ const EpisodePlayer = () => {
 
             {/* Title */}
             <div>
-              <h1 className="text-lg font-bold text-foreground">
+              <h1 className="text-xl font-bold text-foreground">
                 Episódio {episode?.episode_number} — {episode?.title}
               </h1>
               <p className="text-sm text-muted-foreground mt-1">{seriesTitle}</p>
             </div>
 
-            {/* Synopsis */}
+            {/* Plot / Synopsis */}
             {synopsis && (
-              <p className="text-sm text-muted-foreground leading-relaxed">{synopsis}</p>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground mb-1">
+                  Plot of Episode {episode?.episode_number}
+                </h2>
+                <p className="text-sm text-muted-foreground leading-relaxed">{synopsis}</p>
+              </div>
             )}
 
-            {/* Category & Actions */}
-            <div className="flex items-center justify-between">
+            {/* Category Badge */}
+            {categoryName && (
               <div className="flex items-center gap-2">
-                {categoryName && <Badge variant="secondary">{categoryName}</Badge>}
+                <Badge variant="outline" className="rounded-md text-xs">{categoryName}</Badge>
               </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <Heart className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <Star className="h-4 w-4" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <Share2 className="h-4 w-4" />
-                </Button>
-              </div>
+            )}
+
+            {/* Action Icons with Counters */}
+            <div className="flex items-center gap-6">
+              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                <Heart className="h-5 w-5" />
+                <span className="text-xs">4.5k</span>
+              </button>
+              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                <Star className="h-5 w-5" />
+                <span className="text-xs">106.5k</span>
+              </button>
+              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+                <Share2 className="h-5 w-5" />
+                <span className="text-xs">Share</span>
+              </button>
             </div>
 
             {/* Episode Grid */}
@@ -234,10 +248,10 @@ const EpisodePlayer = () => {
                         if (ep.id !== episode?.id) navigate(`/watch/${ep.id}`);
                       }}
                       className={cn(
-                        "relative aspect-square rounded-md flex items-center justify-center text-sm font-medium transition-colors",
+                        "relative aspect-square rounded-md flex items-center justify-center text-sm font-medium transition-colors border",
                         isCurrent
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary/50 text-foreground hover:bg-secondary"
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-secondary/50 text-foreground hover:bg-secondary border-border"
                       )}
                     >
                       {ep.episode_number}
