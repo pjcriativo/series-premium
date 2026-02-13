@@ -1,20 +1,23 @@
 
 
-# Ajustar Tamanho do HeroSlider - Opcao A
+# Ajustar HeroSlider: mais largo e menos alto
 
 ## Alteracoes no arquivo `src/components/HeroSlider.tsx`
 
-### 1. Aumentar a largura maxima
-- Linha 44: trocar `max-w-7xl` (1280px) por `max-w-[1400px]`
+### 1. Aumentar a largura
+- Linha 44: trocar `max-w-[1400px]` por `max-w-[1600px]`
 
-### 2. Aumentar a altura
-- Linha 48: trocar `aspect-[3/2] md:aspect-[16/9]` por `aspect-[4/3] md:aspect-[2/1]`
+### 2. Diminuir a altura (mais estreito verticalmente)
+- Linha 48: trocar `aspect-[4/3] md:aspect-[2/1]` por `aspect-[3/2] md:aspect-[21/9]`
 
-Isso resulta em um slider um pouco mais largo (1400px vs 1280px) e mais alto (proporcao 2:1 no desktop vs 16:9).
+### Resultado
+- **Largura**: 1600px (antes 1400px) -- slider mais largo na tela
+- **Altura desktop**: proporcao 21:9 (~2.33:1) em vez de 2:1 -- slider mais baixo/estreito
+- **Altura mobile**: proporcao 3:2 em vez de 4:3 -- tambem mais baixo no mobile
 
 ## Arquivo Afetado
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/HeroSlider.tsx` | max-w-7xl para max-w-[1400px] e aspect ratio para 4/3 mobile / 2/1 desktop |
+| `src/components/HeroSlider.tsx` | max-w para 1600px e aspect ratio para 3/2 mobile / 21/9 desktop |
 
