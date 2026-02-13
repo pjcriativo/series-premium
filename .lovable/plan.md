@@ -1,43 +1,89 @@
 
 
-# Adicionar botao "Trocar Imagem" nos banners da tabela
+# CRUD Completo de Usuarios no Painel Admin
 
-## O que sera feito
+## Situacao Atual
+O `UserManager.tsx` ja possui:
+- Listagem com busca e paginacao
+- Ajuste de moedas (creditar/debitar)
+- Toggle de papel admin
+- Historico de transacoes
 
-Adicionar um botao de troca de imagem diretamente na linha de cada banner na tabela, sem precisar abrir o modal de edicao completo. Ao clicar, um input de arquivo invisivel sera acionado, o upload sera feito para o Storage e o `image_url` do banner sera atualizado automaticamente.
+## O que sera adicionado
 
-## Alteracoes no arquivo `src/components/admin/BannerManager.tsx`
+### 1. Criar Usuario (via Edge Function)
+Criar usuarios requer acesso ao `supabase.auth.admin.createUser`, que so funciona com a service role key no servidor.
 
-### 1. Input de arquivo oculto com ref
-- Adicionar um `useRef` para um input file invisivel
-- Adicionar um estado `changingImageId` para saber qual banner esta tendo a imagem trocada
+**Nova Edge Function `admin-manage-user`:**
+- Acao `create`: cria usuario com email, senha e display_name
+  - Usa `supabase.auth.admin.createUser()` com `email_confirm: true`
+  - O trigger `handle_new_user` ja existente cria automaticamente o profile, wallet e role
+- Acao `update`: atualiza display_name no profile
+- Acao `delete`: remove usuario via `supabase.auth.admin.deleteUser()`
+  - As foreign keys com CASCADE cuidam de limpar profiles, wallets, roles, etc.
+- Todas as acoes verificam se o chamador e admin via `has_role`
 
-### 2. Funcao `handleChangeImage`
-- Recebe o banner ID e dispara o clique no input file oculto
-- No `onChange` do input, faz upload para `covers/banners/` no Storage
-- Atualiza o campo `image_url` do banner diretamente via `supabase.from("banners").update()`
-- Invalida a query para atualizar a tabela
-- Exibe toast de sucesso
+**Dialog "Criar Usuario" no frontend:**
+- Campos: Email, Senha, Nome de exibicao
+- Validacao basica (email valido, senha minima 6 chars)
+- Botao "Criar" que chama a edge function
 
-### 3. Botao na coluna de acoes
-- Adicionar um botao com icone `ImageIcon` (ou `RefreshCw`) entre o botao de editar e o de excluir
-- Tooltip ou title "Trocar imagem"
-- Mostra spinner/disabled enquanto faz upload
+### 2. Editar Perfil do Usuario
+**Dialog "Editar Usuario":**
+- Campos editaveis: display_name
+- Chama a edge function com acao `update`
 
-### 4. Preview no modal de edicao
-- Manter o comportamento atual: ao editar, a imagem aparece com o input file abaixo para trocar
-- Adicionar um botao "Remover imagem" que limpa o `image_url` do form
+### 3. Excluir Usuario
+**AlertDialog de confirmacao:**
+- Exibe nome do usuario e aviso de que a acao e irreversivel
+- Chama a edge function com acao `delete`
+- Remove o usuario do Supabase Auth (cascade limpa tabelas relacionadas)
+
+### 4. Visualizar Detalhes
+**Dialog de detalhes do usuario:**
+- Exibe: nome, email (se disponivel), data de criacao, saldo, papeis
+- Episodios desbloqueados e series desbloqueadas
+- Acesso rapido as acoes (editar, ajustar moedas, etc.)
+
+## Arquivos modificados
+
+1. **`supabase/functions/admin-manage-user/index.ts`** (NOVO)
+   - Edge function com 3 acoes: create, update, delete
+   - Verificacao de admin em todas as acoes
+
+2. **`src/pages/admin/UserManager.tsx`** (EDITADO)
+   - Botao "Novo Usuario" no topo
+   - Dialog de criacao com formulario
+   - Botao de editar (icone Pencil) na tabela
+   - Dialog de edicao com campos editaveis
+   - Botao de excluir (icone Trash2) na tabela
+   - AlertDialog de confirmacao de exclusao
+   - Dialog de detalhes ao clicar no nome do usuario
 
 ## Detalhes tecnicos
 
 ```text
-Fluxo:
-  Clique no botao "Trocar imagem" na tabela
-    -> Abre file picker nativo
-    -> Upload para covers/banners/{uuid}.{ext}
-    -> UPDATE banners SET image_url = nova_url WHERE id = banner_id
-    -> Invalidate query -> tabela atualiza
-```
+Fluxo de criacao:
+  Admin clica "Novo Usuario"
+    -> Preenche email, senha, nome
+    -> POST /admin-manage-user { action: "create", email, password, display_name }
+    -> Edge function: auth.admin.createUser()
+    -> Trigger handle_new_user cria profile + wallet + role
+    -> Invalida query -> tabela atualiza
 
-Arquivos modificados: apenas `src/pages/admin/BannerManager.tsx`
+Fluxo de exclusao:
+  Admin clica icone Trash no usuario
+    -> AlertDialog de confirmacao
+    -> POST /admin-manage-user { action: "delete", user_id }
+    -> Edge function: auth.admin.deleteUser()
+    -> CASCADE remove dados relacionados
+    -> Invalida query -> tabela atualiza
+
+Fluxo de edicao:
+  Admin clica icone Pencil
+    -> Dialog com nome atual
+    -> POST /admin-manage-user { action: "update", user_id, display_name }
+    -> Edge function: update profiles SET display_name
+    -> Invalida query -> tabela atualiza
+```
 
