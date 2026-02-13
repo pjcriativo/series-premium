@@ -1,45 +1,50 @@
 
-# Corrigir Layout do Hero Slider - Slider Centralizado com Fade Lateral
 
-## Problema
+# Remover Referencias "Lovable" e Atualizar Branding para ReelShort
 
-O slider atual ocupa 100% da largura da tela. Na referencia (ReelShort), o slider e um bloco centralizado com `max-w` limitado, deixando o fundo escuro da pagina visivel nas laterais, e as bordas do slider tem um fade/desfoque que se mistura com o fundo.
+## O que sera alterado
 
-## Solucao
+### 1. index.html - Remover meta tags com links Lovable
 
-Reestruturar o HeroSlider para que o slider fique contido dentro de um `max-w-7xl` centralizado, e os gradientes de fade fiquem nas bordas **internas** do slider, criando a transicao suave para o fundo da pagina.
+As meta tags de Open Graph e Twitter apontam para imagens e perfil do Lovable. Serao atualizadas para ReelShort:
 
-### Estrutura proposta:
+- `og:image`: remover URL `lovable.dev/opengraph-image-p98pqg.png` (substituir por `/og-image.png` local ou remover temporariamente)
+- `twitter:site`: trocar `@Lovable` por `@ReelShort`
+- `twitter:image`: mesma correcao do og:image
+- Adicionar referencia ao favicon corretamente com `<link rel="icon">`
 
-```
-<div className="w-full px-4 md:px-8 pt-4">
-  <section className="relative max-w-7xl mx-auto overflow-hidden rounded-lg">
-    <!-- Embla slider (imagens dentro do container limitado) -->
-    
-    <!-- Fade lateral esquerdo (dentro do slider, na borda interna) -->
-    <div className="absolute left-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80
-         bg-gradient-to-r from-background via-background/50 to-transparent z-10" />
-    
-    <!-- Fade lateral direito -->
-    <div className="absolute right-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80
-         bg-gradient-to-l from-background via-background/50 to-transparent z-10" />
-    
-    <!-- Setas, dots, etc -->
-  </section>
-</div>
-```
+### 2. Favicon
 
-### Mudancas em HeroSlider.tsx:
+O favicon atual (`public/favicon.ico`) provavelmente e o padrao do Lovable. Como nao ha uma imagem personalizada disponivel, sera mantido o arquivo existente mas a referencia no HTML sera explicitada. Se desejar, voce pode enviar uma imagem para usar como favicon personalizado.
 
-1. Adicionar `max-w-7xl mx-auto rounded-lg` na `<section>` para conter o slider no centro
-2. Adicionar padding horizontal no wrapper externo (`px-4 md:px-8`) para garantir espaco nas laterais mesmo em telas menores
-3. Os gradientes de fade ja existem e ficam **dentro** da section, sobre as bordas da imagem, criando a transicao suave para o fundo escuro visivel nas laterais
-4. As setas de navegacao e os dots permanecem dentro da section
+### 3. Arquivos NAO alterados (e por que)
 
-O resultado: o slider fica como um "cartao" centralizado na tela, com o fundo escuro visivel nas laterais, e as bordas do slider desvanecendo suavemente.
+| Arquivo | Motivo |
+|---------|--------|
+| `vite.config.ts` (`lovable-tagger`) | Ferramenta de desenvolvimento interna, nao aparece para usuarios |
+| `package.json` (`lovable-tagger`) | Dependencia de dev, nao afeta o produto final |
+| `supabase/functions/generate-covers/index.ts` (`LOVABLE_API_KEY`, `ai.gateway.lovable.dev`) | Sao endpoints e variaveis de ambiente funcionais da infraestrutura -- renomea-los quebraria a geracao de imagens |
 
 ## Detalhes Tecnicos
 
+### index.html
+
+```html
+<!-- ANTES -->
+<meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+<meta name="twitter:site" content="@Lovable" />
+<meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
+
+<!-- DEPOIS -->
+<link rel="icon" href="/favicon.ico" type="image/x-icon" />
+<meta property="og:image" content="/og-image.png" />
+<meta name="twitter:site" content="@ReelShort" />
+<meta name="twitter:image" content="/og-image.png" />
+```
+
+As imagens OG apontarao para `/og-image.png` (caminho local). Se voce tiver uma imagem de compartilhamento social, pode envia-la depois para colocar em `public/og-image.png`.
+
 | Arquivo | Acao |
 |---------|------|
-| `src/components/HeroSlider.tsx` | Adicionar `max-w-7xl mx-auto rounded-lg` na section, padding no wrapper |
+| `index.html` | Remover URLs lovable.dev, atualizar twitter:site, adicionar link rel="icon" |
+
