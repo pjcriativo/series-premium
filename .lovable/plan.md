@@ -1,28 +1,20 @@
 
-# Aumentar a Altura do HeroSlider
 
-## Comparacao
-- **ReelShort original**: O slider ocupa ~60% da altura da viewport, proporcao proxima de 16:9
-- **Nosso site atual**: Usa `aspect-[16/7]` (mobile) e `aspect-[16/6]` (desktop) — proporcionalmente bem mais baixo
+# Ajustar Tamanho do HeroSlider - Opcao A
 
-## Alteracao
+## Alteracoes no arquivo `src/components/HeroSlider.tsx`
 
-No arquivo `src/components/HeroSlider.tsx`, linha 48, alterar o aspect ratio dos slides:
+### 1. Aumentar a largura maxima
+- Linha 44: trocar `max-w-7xl` (1280px) por `max-w-[1400px]`
 
-### De:
-```
-aspect-[16/7] md:aspect-[16/6]
-```
+### 2. Aumentar a altura
+- Linha 48: trocar `aspect-[3/2] md:aspect-[16/9]` por `aspect-[4/3] md:aspect-[2/1]`
 
-### Para:
-```
-aspect-[3/2] md:aspect-[16/9]
-```
-
-Isso deixa o slider com proporcao 3:2 no mobile (um pouco mais alto para telas pequenas) e 16:9 no desktop (similar ao ReelShort).
+Isso resulta em um slider um pouco mais largo (1400px vs 1280px) e mais alto (proporcao 2:1 no desktop vs 16:9).
 
 ## Arquivo Afetado
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/HeroSlider.tsx` | Alterar aspect ratio de 16/7 e 16/6 para 3/2 e 16/9 |
+| `src/components/HeroSlider.tsx` | max-w-7xl para max-w-[1400px] e aspect ratio para 4/3 mobile / 2/1 desktop |
+
