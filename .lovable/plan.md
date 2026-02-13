@@ -1,49 +1,49 @@
 
 
-# Corrigir Largura dos Cards no Carrossel
+# Ajustar Visual do Carrossel para Estilo ReelShort
 
-## Causa Raiz
+## Situacao Atual
 
-Os cards do carrossel aparecem minusculos porque as classes CSS `calc()` dentro do Tailwind estao com sintaxe invalida. O CSS exige espacos ao redor dos operadores `+` e `-` dentro de `calc()`. No Tailwind, espacos em valores arbitrarios devem ser escritos como underscores (`_`).
+O carrossel horizontal JA ESTA implementado e funcionando corretamente. Os cards tem o tamanho correto para 7 por linha no desktop. O motivo de nao parecer com o ReelShort e que cada categoria tem apenas 2-3 series - os cards ficam agrupados na esquerda com espaco vazio na direita. As setas so aparecem quando ha mais itens do que o visivel (8+ no desktop).
 
-**Classe atual (invalida):**
-```
-w-[calc((100%-0.75rem)/2)]
-```
+**Com 7+ series por categoria, o carrossel ja funciona identico ao ReelShort.**
 
-**Classe correta:**
-```
-w-[calc((100%_-_0.75rem)/2)]
-```
+## Ajustes Visuais para Aproximar do ReelShort
 
-## Alteracoes
+### 1. Aumentar gap entre cards e titulo da secao
 
-### 1. Corrigir `CategoryRow.tsx` (linha 25)
+ReelShort usa gap maior (~20px) entre cards e titulos maiores/mais bold.
 
-Substituir:
-```
-w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2.25rem)/4)] lg:w-[calc((100%-4.5rem)/7)]
-```
+- `HorizontalCarousel.tsx`: gap-3 (12px) para gap-4 (16px), titulo de `text-lg` para `text-xl font-bold`
+- Adicionar link "Ver tudo >" ao lado direito do titulo (como no ReelShort)
 
-Por:
-```
-w-[calc((100%_-_0.75rem)/2)] md:w-[calc((100%_-_2.25rem)/4)] lg:w-[calc((100%_-_4.5rem)/7)]
-```
+### 2. Remover badge de categoria dos cards
 
-### 2. Corrigir `Index.tsx` - secao "Continue Assistindo" (linha 106)
+No ReelShort, os cards NAO tem badge de categoria sobreposta - a categoria ja esta no titulo da secao.
 
-Mesma correcao de underscores nas classes `calc()`.
+- `SeriesCard.tsx`: remover o badge `category_name` que aparece no canto superior esquerdo
+
+### 3. Aumentar espacamento entre secoes
+
+- `HorizontalCarousel.tsx`: mb-8 para mb-10
+- `Index.tsx`: space-y-2 para space-y-4
+
+### 4. Melhorar visibilidade das setas
+
+Tornar as setas sempre visiveis (nao apenas no hover) e maiores, como no ReelShort onde a seta direita fica semi-transparente sobre o ultimo card.
+
+- Remover `opacity-0 group-hover/carousel:opacity-100` das setas
+- Aumentar tamanho dos botoes (p-2 para p-3, icone h-5 w-5 para h-6 w-6)
 
 ## Arquivos Afetados
 
-| Arquivo | Linha | Acao |
-|---------|-------|------|
-| `src/components/CategoryRow.tsx` | 25 | Corrigir underscores no calc |
-| `src/pages/Index.tsx` | 106 | Corrigir underscores no calc |
+| Arquivo | Acao |
+|---------|------|
+| `src/components/HorizontalCarousel.tsx` | Ajustar gap, titulo, setas, adicionar "Ver tudo" |
+| `src/components/SeriesCard.tsx` | Remover badge de categoria |
+| `src/pages/Index.tsx` | Ajustar espacamento entre secoes |
 
-## Resultado Esperado
+## Nota Importante
 
-- Mobile: 2 cards visiveis por linha
-- Tablet: 4 cards visiveis
-- Desktop: 7 cards visiveis
-- Setas de navegacao aparecem quando ha mais cards do que o visivel
+Para o carrossel funcionar visualmente como o ReelShort (7 cards preenchendo toda a largura com seta de navegacao), e necessario ter **8 ou mais series por categoria**. Com apenas 3 series, os cards ficam corretamente dimensionados mas nao preenchem a linha toda - isso e comportamento esperado e identico ao que aconteceria no proprio ReelShort com poucos itens.
+
