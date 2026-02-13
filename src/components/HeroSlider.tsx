@@ -40,8 +40,8 @@ const HeroSlider = React.forwardRef<HTMLDivElement, HeroSliderProps>(
     if (!banners.length) return null;
 
     return (
-      <div ref={ref} className="w-full">
-        <section className="relative overflow-hidden">
+      <div ref={ref} className="w-full px-4 md:px-8 pt-4">
+        <section className="relative overflow-hidden max-w-7xl mx-auto rounded-lg">
           <div ref={emblaRef} className="overflow-hidden">
             <div className="flex">
               {banners.map((banner) => (
