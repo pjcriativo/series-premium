@@ -41,7 +41,7 @@ const HorizontalCarousel: React.FC<HorizontalCarouselProps> = ({ title, children
     const gap = 16; // gap-4
     const cardWidth = (container.firstElementChild as HTMLElement).offsetWidth + gap;
     const w = window.innerWidth;
-    const visibleCards = w >= 1024 ? 7 : w >= 768 ? 4 : 2;
+    const visibleCards = w >= 1024 ? 6 : w >= 768 ? 3 : 2;
     const scrollAmount = cardWidth * visibleCards;
 
     container.scrollBy({
