@@ -51,9 +51,7 @@ const App = () => (
             <Route path="/series/:id" element={<SeriesDetail />} />
 
             {/* Player */}
-            <Route path="/watch/:episodeId" element={
-              <ProtectedRoute><EpisodePlayer /></ProtectedRoute>
-            } />
+            <Route path="/watch/:episodeId" element={<EpisodePlayer />} />
 
             {/* User routes */}
             <Route path="/me" element={
