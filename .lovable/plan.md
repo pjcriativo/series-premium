@@ -1,35 +1,25 @@
 
 
-# Adicionar Gradientes Superior e Inferior ao Hero Slider
+# Ajustar Gradientes do Hero Slider
 
-## Objetivo
+## Problema Atual
 
-Adicionar efeito de fade (gradiente) na parte de cima e de baixo do slider, igual ao site original do ReelShort. Atualmente so existem gradientes laterais (esquerda e direita).
+Os gradientes superior e inferior tem a mesma altura (`h-20 md:h-32`) e intensidade. No site original do ReelShort, o fade inferior e mais pronunciado (para fundir suavemente com o conteudo abaixo) e o fade superior e mais sutil.
 
-## O que sera alterado
+## Alteracoes Propostas
 
 ### `src/components/HeroSlider.tsx`
 
-Adicionar dois novos `div` com gradientes absolutos:
-
-- **Topo**: gradiente de cima para baixo (`from-background to-transparent`) - cria a transicao suave entre a navbar e o banner
-- **Base**: gradiente de baixo para cima (`from-background to-transparent`) - cria a transicao suave entre o banner e o conteudo abaixo
-
-Ambos terao `z-10` e `pointer-events-none`, seguindo o mesmo padrao dos gradientes laterais ja existentes.
+| Gradiente | Atual | Novo |
+|-----------|-------|------|
+| Superior | `h-20 md:h-32` | `h-16 md:h-24` (menor, mais sutil) |
+| Inferior | `h-20 md:h-32` | `h-28 md:h-44` (maior, mais intenso) |
+| Inferior intensidade | `from-background to-transparent` | `from-background via-background/60 to-transparent` (fade mais forte) |
+| Laterais | sem alteracao | sem alteracao |
 
 ## Detalhes Tecnicos
 
-```html
-<!-- Fade superior -->
-<div class="absolute top-0 inset-x-0 h-20 md:h-32 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
+Linha 88 - Fade superior: reduzir altura para `h-16 md:h-24`
 
-<!-- Fade inferior -->
-<div class="absolute bottom-0 inset-x-0 h-20 md:h-32 bg-gradient-to-t from-background to-transparent z-10 pointer-events-none" />
-```
-
-Serao inseridos dentro do `<section>` principal, junto aos gradientes laterais ja existentes.
-
-| Arquivo | Acao |
-|---------|------|
-| `src/components/HeroSlider.tsx` | Adicionar 2 divs de gradiente (topo e base) |
+Linha 90 - Fade inferior: aumentar altura para `h-28 md:h-44` e adicionar `via-background/60` para intensificar a transicao, criando o efeito de "dissolucao" mais fiel ao original.
 
