@@ -1,39 +1,56 @@
 
 
-# Fix: PaywallModal no EpisodePlayer precisa do seriesTotalCost
+# Redesign do PaywallModal - Layout identico ao original
 
-## Problema
-Existem dois problemas:
+## Diferencas identificadas entre o modal atual e o de referencia
 
-1. **Vercel desatualizado**: O modal antigo ("Desbloquear Conteudo") aparece porque o site em `series-premium.vercel.app` nao foi atualizado com o codigo mais recente. O preview do Lovable ja tem o novo modal.
+| Aspecto | Referencia | Nosso atual |
+|---------|-----------|-------------|
+| Largura | ~850px (largo) | ~400px (estreito) |
+| Secao de desbloqueio | 2 cards lado a lado (estilo VIP) com gradiente quente | Botoes empilhados verticalmente |
+| Grid de moedas | 3 colunas, cards grandes com texto alinhado a esquerda, mostrando "Immediately: X / Free: Y", badge de bonus colorido no canto | 3 colunas, cards pequenos centralizados, sem detalhes |
+| Headers de secao | Texto bold alinhado a esquerda ("Top up coins", "Payment Methods") | Texto centralizado com linhas divisorias |
+| Pagamento | 3 botoes iguais em linha, com borda visivel e texto grande | 3 botoes pequenos centralizados |
+| Titulo do episodio | Nao aparece no corpo | Aparece centralizado |
 
-2. **Bug real**: O PaywallModal acionado pelo grid de episodios no EpisodePlayer nao recebe a prop `seriesTotalCost`, entao a opcao "Desbloquear serie" nunca aparece nesse contexto.
+## Alteracoes no arquivo `src/components/PaywallModal.tsx`
 
-## Solucao
+### 1. Largura do modal
+- Mudar de `sm:max-w-md` para `sm:max-w-2xl` (~672px)
 
-### Arquivo: `src/pages/EpisodePlayer.tsx`
+### 2. Header (manter igual - ja esta bom)
+- "Preco: (moeda) X | Saldo: (moeda) Y" + botao X
 
-1. Calcular o `seriesTotalCost` (custo total dos episodios pagos ainda nao desbloqueados da serie), usando os dados ja disponiveis (`allEpisodes`, `userEpisodeUnlocks`, `seriesFreeEps`, `seriesUnlocked`)
-2. Passar `seriesTotalCost` para o PaywallModal do grid (linhas 300-317)
-3. Tambem passar `seriesTitle` que ja esta disponivel
+### 3. Secao de desbloqueio - 2 cards lado a lado
+- Trocar os botoes empilhados por um grid de 2 colunas
+- Card "Desbloquear episodio" a esquerda e "Desbloquear serie" a direita
+- Cada card com gradiente sutil (`from-primary/20 to-purple-900/30`), borda `border-primary/30`
+- Dentro de cada card: titulo, preco em moedas, subtexto, e icones de features na parte inferior (ex: icone + "Acesso imediato", icone + "Alta qualidade")
+- Remover o titulo do episodio que aparece acima
 
-### Calculo do seriesTotalCost
+### 4. Secao "Recarregar moedas"
+- Header alinhado a esquerda, bold: "Recarregar moedas" (sem linhas divisorias)
+- Grid 3 colunas com cards maiores
+- Cada card com layout alinhado a esquerda:
+  - Icone de moeda + quantidade em bold grande (ex: "1.150")
+  - Linha "Imediato: 1.000"
+  - Linha "Bonus: 150"
+  - Preco em BRL no rodape do card
+  - Badge de bonus colorido no canto superior direito (ex: "+15%") usando `bg-primary`
+- O bonus sera calculado: se `coin_packages` tiver campo `bonus` ou calcular como percentual extra
 
-```
-const seriesTotalCost = seriesUnlocked ? 0 :
-  allEpisodes
-    .filter(ep => !ep.is_free && ep.episode_number > seriesFreeEps && !userEpisodeUnlocks.includes(ep.id))
-    .reduce((sum, ep) => sum + ep.price_coins, 0);
-```
+### 5. Secao "Pagamento"
+- Header alinhado a esquerda, bold: "Pagamento"
+- 3 botoes iguais em grid de 3 colunas
+- Cada botao com borda visivel, padding maior, texto centralizado
+- "Cartao" (com icone CreditCard), "G Pay", "Mercado Pago"
+- Primeiro botao com borda `border-primary` indicando selecao ativa
 
-### Props adicionadas no PaywallModal do grid
+### 6. Logica mantida
+- Todas as funcoes (handleUnlockEpisode, handleUnlockSeries, handleBuyCoins) permanecem identicas
+- Props e interface sem alteracao
+- Query de coin_packages mantida
 
-| Prop | Valor |
-|------|-------|
-| `seriesTotalCost` | Calculado acima |
-| `seriesTitle` | Ja disponivel como `seriesTitle` |
+## Resultado visual esperado
+Modal largo, com secao de desbloqueio em 2 cards lado a lado no topo, seguido de grid de moedas com detalhes completos (bonus, imediato) e metodos de pagamento com botoes grandes - tudo nas cores dark/roxo/azul do nosso tema.
 
-Nenhum outro arquivo precisa ser alterado.
-
-## Sobre o Vercel
-Apos aprovar e implementar, voce precisara fazer deploy no Vercel para que as mudancas aparecam em `series-premium.vercel.app`. O preview do Lovable ja mostrara o modal correto.
