@@ -1,64 +1,93 @@
 
-# Hover Overlay nos Cards (Estilo ReelShort)
+# Redesenhar Tela do Player de Episodio (Estilo ReelShort)
 
-## O que sera feito
+## Layout Atual vs Referencia
 
-Ao passar o mouse sobre um card de serie, aparecera um overlay na parte inferior com:
-- **Categoria** da serie (ex: "Romance", "Drama")
-- **Sinopse** truncada (2-3 linhas)
-- **Botao "Play"** estilizado em rosa/primary
-- **Icones** de favoritar e compartilhar (decorativos por enquanto)
+**Atual**: Player ocupa tela inteira (fullscreen overlay) com controles sobrepostos. Sem informacoes laterais.
+
+**ReelShort (referencia)**: Layout de duas colunas no desktop:
+- **Esquerda (~60%)**: Video player com controles na parte inferior (play/pause, tempo, volume, fullscreen)
+- **Direita (~40%)**: Painel de informacoes contendo:
+  - Breadcrumb (Home > Serie > Episodio)
+  - Titulo do episodio
+  - Sinopse/Plot do episodio
+  - Tags de categoria
+  - Acoes (curtir, favoritar, compartilhar)
+  - Grade de episodios em formato de grid numerico (1, 2, 3... com icones de lock nos pagos)
 
 ## Alteracoes
 
-### 1. Buscar `synopsis` na query (`Index.tsx`)
+### 1. Redesenhar `EpisodePlayer.tsx` - Layout Desktop
 
-A tabela `series` ja possui o campo `synopsis`. Basta adicionalo ao SELECT da query `browse-series`:
+Substituir o layout fullscreen por um layout responsivo:
 
-```
-.select("id, title, cover_url, synopsis, category_id, categories:category_id(name), episodes(id)")
-```
+- **Desktop (lg+)**: Duas colunas lado a lado dentro de uma pagina com Navbar
+  - Coluna esquerda: video player com aspect-ratio adequado e controles
+  - Coluna direita: painel scrollavel com info + grid de episodios
+- **Mobile**: Manter layout similar ao atual (video em cima, info embaixo com scroll)
 
-### 2. Passar `synopsis` para o `SeriesCard` via `CategoryRow`
+### 2. Painel Lateral Direito (novo)
 
-Atualizar a interface `SeriesCardProps` para incluir `synopsis`:
+Contera:
+- **Breadcrumb**: Home > Nome da Serie > Episodio X
+- **Titulo**: "Episodio X - [titulo]"
+- **Sinopse**: Plot/descricao do episodio (campo `title` da serie ou sinopse)
+- **Tags de categoria**: Badges com o nome da categoria da serie
+- **Acoes**: Icones de coracao, estrela e compartilhar (decorativos por enquanto)
+- **Grid de episodios**: Botoes numerados em grid (5-6 por linha), com:
+  - Episodio atual destacado (borda primary)
+  - Icone de lock vermelho nos episodios pagos nao desbloqueados
+  - Episodios gratuitos sem icone
+  - Clique navega para o episodio
 
-```typescript
-series: {
-  id: string;
-  title: string;
-  cover_url: string | null;
-  category_name?: string | null;
-  episode_count?: number;
-  synopsis?: string | null;  // novo campo
-};
-```
+### 3. Atualizar `useEpisodePlayer.ts`
 
-### 3. Redesenhar o `SeriesCard.tsx` com hover overlay
+Buscar dados adicionais necessarios:
+- Lista completa de episodios da serie (ja existe parcialmente com `nextEpisode`)
+- Categoria da serie
+- Sinopse da serie
 
-Substituir o gradiente atual por um overlay que aparece no hover, contendo:
+Adicionar nova query `all-episodes` para buscar todos os episodios da serie de uma vez.
 
-- Categoria em texto pequeno (usa `category_name` que ja existe na prop)
-- Synopsis truncada com `line-clamp-3`
-- Botao "Play" com icone, estilizado em primary (rosa)
-- Icones de estrela e compartilhar ao lado do botao
-- Transicao suave com `opacity-0 group-hover:opacity-100`
-- Fundo semi-transparente escuro (`bg-black/80`)
+### 4. Remover ProtectedRoute do Player
 
-O overlay so aparece em telas desktop (hidden em mobile via `md:group-hover:opacity-100`).
-
-### 4. Remover o `hover:scale-105` do card
-
-No ReelShort, o card nao aumenta de tamanho no hover - apenas o overlay aparece. O zoom sera removido para evitar sobreposicao visual.
+Atualmente o player exige login. Para manter consistencia com o ReelShort (que mostra a pagina mesmo sem login, bloqueando apenas o conteudo pago), considerar manter como esta mas exibir o layout completo.
 
 ## Arquivos Afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/pages/Index.tsx` | Adicionar `synopsis` ao SELECT da query |
-| `src/components/SeriesCard.tsx` | Adicionar overlay com play, sinopse e icones no hover |
-| `src/components/CategoryRow.tsx` | Passar `synopsis` no objeto de serie |
+| `src/pages/EpisodePlayer.tsx` | Redesenho completo: layout 2 colunas desktop, painel lateral com info + grid |
+| `src/hooks/useEpisodePlayer.ts` | Adicionar query para todos os episodios da serie e categoria |
+| `src/components/Navbar.tsx` | Verificar se Navbar aparece na rota /watch (atualmente oculta) |
 
 ## Detalhes Tecnicos
 
-O overlay fica posicionado na parte inferior do card (`absolute bottom-0`) com padding e ocupa cerca de metade da altura do card. A animacao usa classes Tailwind nativas (`transition-opacity duration-300`). Os icones de estrela e compartilhar serao do Lucide (`Star`, `Share2`). O botao Play navega para `/series/{id}`.
+### Estrutura do Layout Desktop
+```
+<div className="min-h-screen bg-background">
+  <Navbar />
+  <main className="pt-14 px-4 lg:px-8">
+    <div className="flex flex-col lg:flex-row gap-6 max-w-7xl mx-auto">
+      <!-- Coluna Video (lg:w-3/5) -->
+      <div className="lg:w-3/5">
+        <div className="aspect-video bg-black rounded-lg overflow-hidden relative">
+          <!-- video + controles -->
+        </div>
+      </div>
+      <!-- Coluna Info (lg:w-2/5) -->
+      <div className="lg:w-2/5 space-y-4">
+        <!-- breadcrumb, titulo, sinopse, tags, acoes, grid -->
+      </div>
+    </div>
+  </main>
+</div>
+```
+
+### Grid de Episodios
+Grid de 5-6 colunas com botoes quadrados numerados. Cada botao mostra o numero do episodio. Episodios pagos nao desbloqueados tem um pequeno icone de lock vermelho no canto superior direito. O episodio atual tem borda/fundo destacado em primary.
+
+### Queries Adicionais no Hook
+- `allEpisodes`: SELECT todos episodios da serie ordenados por episode_number
+- `seriesDetail`: SELECT serie com categoria (para tags e sinopse)
+- Reutilizar `episodeUnlocks` para marcar quais estao desbloqueados no grid
