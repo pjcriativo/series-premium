@@ -38,61 +38,89 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
 
   const checkAdmin = async (userId: string) => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    setIsAdmin(!!data);
-    setAdminChecked(true);
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
+      if (error) console.error("[AUTH] checkAdmin error", error);
+      setIsAdmin(!!data);
+      console.log("[AUTH] checkAdmin result", userId, !!data);
+    } catch (err) {
+      console.error("[AUTH] checkAdmin exception", err);
+      setIsAdmin(false);
+    } finally {
+      setAdminChecked(true);
+    }
   };
 
   const fetchProfile = async (userId: string) => {
-    const { data } = await supabase
-      .from("profiles")
-      .select("id, display_name, avatar_url, auto_unlock")
-      .eq("id", userId)
-      .maybeSingle();
-    setProfile(data);
+    try {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_url, auto_unlock")
+        .eq("id", userId)
+        .maybeSingle();
+      if (error) console.error("[AUTH] fetchProfile error", error);
+      setProfile(data);
+    } catch (err) {
+      console.error("[AUTH] fetchProfile exception", err);
+      setProfile(null);
+    }
   };
 
   const refreshProfile = async () => {
     if (user) await fetchProfile(user.id);
   };
 
+  const loadUserData = async (userId: string) => {
+    try {
+      await Promise.all([checkAdmin(userId), fetchProfile(userId)]);
+    } catch (err) {
+      console.error("[AUTH] loadUserData error", err);
+      setAdminChecked(true);
+    } finally {
+      setLoading(false);
+      console.log("[AUTH] loading complete");
+    }
+  };
+
   useEffect(() => {
+    // First get the current session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("[AUTH] getSession result", session?.user?.id);
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        loadUserData(session.user.id);
+      } else {
+        setAdminChecked(true);
+        setLoading(false);
+        console.log("[AUTH] loading complete (no session)");
+      }
+    });
+
+    // Then listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      (_event, session) => {
+        console.log("[AUTH] onAuthStateChange", _event, session?.user?.id);
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          await Promise.all([
-            checkAdmin(session.user.id),
-            fetchProfile(session.user.id),
-          ]);
+          // Defer to avoid Supabase deadlock
+          setTimeout(() => {
+            loadUserData(session.user.id);
+          }, 0);
         } else {
           setIsAdmin(false);
           setAdminChecked(true);
           setProfile(null);
+          setLoading(false);
         }
-        setLoading(false);
       }
     );
-
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await Promise.all([
-          checkAdmin(session.user.id),
-          fetchProfile(session.user.id),
-        ]);
-      } else {
-        setAdminChecked(true);
-      }
-      setLoading(false);
-    });
 
     return () => subscription.unsubscribe();
   }, []);
