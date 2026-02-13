@@ -60,6 +60,11 @@ const EpisodePlayer = () => {
   const categoryName = (seriesDetail as any)?.categories?.name ?? null;
   const synopsis = seriesDetail?.synopsis ?? "";
 
+  const seriesTotalCost = seriesUnlocked ? 0 :
+    allEpisodes
+      .filter(ep => !ep.is_free && ep.episode_number > seriesFreeEps && !userEpisodeUnlocks.includes(ep.id))
+      .reduce((sum, ep) => sum + ep.price_coins, 0);
+
   const isEpisodeAccessible = (ep: { id: string; is_free: boolean; episode_number: number }) => {
     if (ep.is_free) return true;
     if (ep.episode_number <= seriesFreeEps) return true;
@@ -307,6 +312,7 @@ const EpisodePlayer = () => {
           balance={walletBalance}
           seriesId={seriesId}
           seriesTitle={seriesTitle}
+          seriesTotalCost={seriesTotalCost}
           onUnlocked={() => {
             queryClient.invalidateQueries({ queryKey: ["wallet"] });
             queryClient.invalidateQueries({ queryKey: ["user-episode-unlocks", seriesId] });
