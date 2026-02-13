@@ -41,11 +41,11 @@ const HeroSlider = React.forwardRef<HTMLDivElement, HeroSliderProps>(
 
     return (
       <div ref={ref} className="w-full px-4 md:px-8 pt-4">
-        <section className="relative overflow-hidden max-w-7xl mx-auto rounded-lg">
+        <section className="relative overflow-hidden max-w-[1400px] mx-auto rounded-lg">
           <div ref={emblaRef} className="overflow-hidden">
             <div className="flex">
               {banners.map((banner) => (
-                <div key={banner.id} className="flex-[0_0_100%] min-w-0 relative aspect-[3/2] md:aspect-[16/9]">
+                <div key={banner.id} className="flex-[0_0_100%] min-w-0 relative aspect-[4/3] md:aspect-[2/1]">
                   {banner.image_url ? (
                     <img
                       src={banner.image_url}
