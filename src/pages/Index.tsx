@@ -7,6 +7,7 @@ import { getSeriesCover } from "@/lib/demo-covers";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
 import HeroSlider from "@/components/HeroSlider";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import CategoryRow from "@/components/CategoryRow";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -86,7 +87,11 @@ const Index = () => {
           </div>
         ) : (
           <>
-            {banners && banners.length > 0 && <HeroSlider banners={banners as any} />}
+            {banners && banners.length > 0 && (
+              <ErrorBoundary>
+                <HeroSlider banners={banners as any} />
+              </ErrorBoundary>
+            )}
 
             {user && continueWatching && continueWatching.length > 0 && (
               <div className="mt-6 w-full flex justify-center px-4 md:px-6">
