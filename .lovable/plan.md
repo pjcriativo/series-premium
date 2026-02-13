@@ -1,29 +1,26 @@
 
-# Alinhar Navbar com o Topo do Slider (Estilo ReelShort)
 
-## Problema Atual
-- O HeroSlider tem padding (`px-4 md:px-8 pt-4`), `max-w-7xl`, e `rounded-lg`, criando um layout de "card" com espaco ao redor
-- Isso faz a navbar parecer desalinhada/torta em relacao ao slider
-- No site original, o slider e full-width (borda a borda) e a navbar fica sobreposta diretamente sobre ele
+# Centralizar a Navbar e Reverter o Slider
+
+## Problema
+A alteracao anterior modificou o HeroSlider incorretamente. O slider deve voltar ao estado original (com padding e rounded corners), e o ajuste deve ser feito apenas na Navbar, centralizando-a.
 
 ## Alteracoes
 
-### 1. HeroSlider.tsx - Remover padding e bordas arredondadas
-- Remover `px-4 md:px-8 pt-4` do container externo
-- Remover `max-w-7xl mx-auto` e `rounded-lg` da section
-- O slider deve ocupar 100% da largura, sem bordas arredondadas, permitindo que a navbar fique sobreposta naturalmente
+### 1. HeroSlider.tsx - Reverter ao estado original
+Restaurar as classes removidas:
+- `px-4 md:px-8 pt-4` no container externo
+- `max-w-7xl mx-auto` e `rounded-lg` na section
 
-### 2. Index.tsx - Sem padding-top extra
-- Garantir que o `<main>` nao tenha padding-top que empurre o slider para baixo da navbar
-- O slider deve comecar no topo absoluto da pagina, atras da navbar transparente
-
-## Resultado Esperado
-- O slider ocupa toda a largura da tela, do topo ao limite inferior da imagem
-- A navbar (ja `fixed top-0` com `bg-transparent`) fica sobreposta sobre o slider
-- O gradiente superior do slider cria a transicao suave para a navbar ficar legivel
+### 2. Navbar.tsx - Centralizar o conteudo
+Atualmente a navbar usa `justify-between` com conteudo colado nas bordas. Para centralizar:
+- Adicionar `max-w-7xl mx-auto` ao container interno da navbar para alinhar com o slider
+- Manter `justify-between` dentro desse container centralizado
 
 ## Arquivos Afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/HeroSlider.tsx` | Remover padding, max-width e rounded corners do container |
+| `src/components/HeroSlider.tsx` | Reverter: adicionar de volta padding, max-width e rounded corners |
+| `src/components/Navbar.tsx` | Adicionar max-w-7xl mx-auto para centralizar o conteudo |
+
