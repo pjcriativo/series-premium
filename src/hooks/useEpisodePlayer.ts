@@ -95,21 +95,55 @@ export const useEpisodePlayer = () => {
     enabled: !!episode?.video_url && hasAccess === true && !youtubeId,
   });
 
-  // Next episode
-  const { data: nextEpisode } = useQuery({
-    queryKey: ["next-episode", seriesId, episode?.episode_number],
+  // All episodes of the series
+  const { data: allEpisodes } = useQuery({
+    queryKey: ["all-episodes", seriesId],
     queryFn: async () => {
       const { data } = await supabase
         .from("episodes")
-        .select("id, title, episode_number, price_coins, is_free")
+        .select("id, title, episode_number, price_coins, is_free, is_published")
         .eq("series_id", seriesId)
-        .eq("episode_number", episode!.episode_number + 1)
         .eq("is_published", true)
-        .maybeSingle();
+        .order("episode_number");
+      return data ?? [];
+    },
+    enabled: !!seriesId,
+  });
+
+  // Series detail with category
+  const { data: seriesDetail } = useQuery({
+    queryKey: ["series-detail", seriesId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("series")
+        .select("id, title, synopsis, slug, categories:category_id(name)")
+        .eq("id", seriesId)
+        .single();
       return data;
     },
-    enabled: !!episode && !!seriesId,
+    enabled: !!seriesId,
   });
+
+  // User's episode unlocks for the series
+  const { data: userEpisodeUnlocks } = useQuery({
+    queryKey: ["user-episode-unlocks", seriesId, user?.id],
+    queryFn: async () => {
+      const epIds = (allEpisodes ?? []).map((e) => e.id);
+      if (epIds.length === 0) return [];
+      const { data } = await supabase
+        .from("episode_unlocks")
+        .select("episode_id")
+        .eq("user_id", user!.id)
+        .in("episode_id", epIds);
+      return data?.map((d) => d.episode_id) ?? [];
+    },
+    enabled: !!user && !!allEpisodes && allEpisodes.length > 0,
+  });
+
+  // Next episode (derived from allEpisodes)
+  const nextEpisode = allEpisodes?.find(
+    (e) => e.episode_number === (episode?.episode_number ?? 0) + 1
+  ) ?? null;
 
   // Wallet balance
   const { data: wallet } = useQuery({
@@ -297,6 +331,10 @@ export const useEpisodePlayer = () => {
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
     nextEpisode, isNextAccessible, walletBalance,
     seriesId, seriesFreeEps,
+    allEpisodes: allEpisodes ?? [],
+    seriesDetail,
+    userEpisodeUnlocks: userEpisodeUnlocks ?? [],
+    seriesUnlocked: seriesUnlocked ?? false,
     togglePlay, toggleMute, handleTimeUpdate, handleEnded,
     handleReplay, handleNext, handleSeek, formatTime,
     navigate, queryClient,
