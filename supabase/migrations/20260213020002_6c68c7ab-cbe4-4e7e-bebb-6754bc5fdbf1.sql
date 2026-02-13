@@ -1,0 +1,1 @@
+ALTER TABLE episodes ADD COLUMN youtube_url text;

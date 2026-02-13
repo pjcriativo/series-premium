@@ -19,6 +19,7 @@ interface EpisodeFormData {
   price_coins: number;
   duration_seconds: number;
   is_published: boolean;
+  youtube_url: string;
 }
 
 const emptyForm: EpisodeFormData = {
@@ -29,6 +30,7 @@ const emptyForm: EpisodeFormData = {
   price_coins: 10,
   duration_seconds: 0,
   is_published: false,
+  youtube_url: "",
 };
 
 const EpisodeForm = () => {
@@ -73,6 +75,7 @@ const EpisodeForm = () => {
         price_coins: episode.price_coins,
         duration_seconds: episode.duration_seconds ?? 0,
         is_published: episode.is_published,
+        youtube_url: (episode as any).youtube_url ?? "",
       });
       setCurrentVideoUrl(episode.video_url);
     }
@@ -187,6 +190,18 @@ const EpisodeForm = () => {
             <Label>Duração (segundos)</Label>
             <Input type="number" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: parseInt(e.target.value) || 0 })} />
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>URL do YouTube (formato Reels/Shorts)</Label>
+          <Input
+            placeholder="https://www.youtube.com/watch?v=... ou https://youtube.com/shorts/..."
+            value={form.youtube_url}
+            onChange={(e) => setForm({ ...form, youtube_url: e.target.value })}
+          />
+          <p className="text-xs text-muted-foreground">
+            Preencha a URL do YouTube <strong>ou</strong> faça upload do vídeo abaixo. A URL do YouTube tem prioridade.
+          </p>
         </div>
 
         <div className="space-y-2">

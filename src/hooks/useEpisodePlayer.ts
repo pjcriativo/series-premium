@@ -72,7 +72,17 @@ export const useEpisodePlayer = () => {
     enabled: !!user && !!episode,
   });
 
-  // Video signed URL
+  // Extract YouTube video ID
+  const youtubeId = (() => {
+    const url = (episode as any)?.youtube_url;
+    if (!url) return null;
+    const match = url.match(
+      /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/
+    );
+    return match ? match[1] : null;
+  })();
+
+  // Video signed URL (skip if YouTube)
   const { data: videoUrl } = useQuery({
     queryKey: ["video-url", episode?.video_url],
     queryFn: async () => {
@@ -82,7 +92,7 @@ export const useEpisodePlayer = () => {
       if (error) return null;
       return data.signedUrl;
     },
-    enabled: !!episode?.video_url && hasAccess === true,
+    enabled: !!episode?.video_url && hasAccess === true && !youtubeId,
   });
 
   // Next episode
@@ -282,7 +292,7 @@ export const useEpisodePlayer = () => {
 
   return {
     episode, epLoading, accessLoading, hasAccess,
-    videoRef, videoUrl,
+    videoRef, videoUrl, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
     nextEpisode, isNextAccessible, walletBalance,
