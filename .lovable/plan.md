@@ -1,63 +1,64 @@
 
-# Aumentar Tamanho dos Cards do Carrossel
+# Hover Overlay nos Cards (Estilo ReelShort)
 
-## Problema
+## O que sera feito
 
-Os cards estao dimensionados para 7 por linha no desktop, o que os torna menores que os do ReelShort. O ReelShort mostra aproximadamente 6 cards visiveis por linha no desktop, com o 7o parcialmente visivel (indicando scroll).
+Ao passar o mouse sobre um card de serie, aparecera um overlay na parte inferior com:
+- **Categoria** da serie (ex: "Romance", "Drama")
+- **Sinopse** truncada (2-3 linhas)
+- **Botao "Play"** estilizado em rosa/primary
+- **Icones** de favoritar e compartilhar (decorativos por enquanto)
 
-## Alteracao
+## Alteracoes
 
-Reduzir a quantidade de cards visiveis por linha:
+### 1. Buscar `synopsis` na query (`Index.tsx`)
 
-| Breakpoint | Atual | Novo |
-|------------|-------|------|
-| Desktop (lg) | 7 cards | 6 cards |
-| Tablet (md) | 4 cards | 3 cards |
-| Mobile | 2 cards | 2 cards (sem alteracao) |
+A tabela `series` ja possui o campo `synopsis`. Basta adicionalo ao SELECT da query `browse-series`:
 
-## Calculos CSS Atualizados
+```
+.select("id, title, cover_url, synopsis, category_id, categories:category_id(name), episodes(id)")
+```
 
-Com gap-4 (1rem = 16px):
+### 2. Passar `synopsis` para o `SeriesCard` via `CategoryRow`
 
-- **Desktop (6 cards)**: `lg:w-[calc((100%_-_5rem)/6)]` (5 gaps entre 6 cards)
-- **Tablet (3 cards)**: `md:w-[calc((100%_-_2rem)/3)]` (2 gaps entre 3 cards)
-- **Mobile (2 cards)**: `w-[calc((100%_-_1rem)/2)]` (sem alteracao)
+Atualizar a interface `SeriesCardProps` para incluir `synopsis`:
+
+```typescript
+series: {
+  id: string;
+  title: string;
+  cover_url: string | null;
+  category_name?: string | null;
+  episode_count?: number;
+  synopsis?: string | null;  // novo campo
+};
+```
+
+### 3. Redesenhar o `SeriesCard.tsx` com hover overlay
+
+Substituir o gradiente atual por um overlay que aparece no hover, contendo:
+
+- Categoria em texto pequeno (usa `category_name` que ja existe na prop)
+- Synopsis truncada com `line-clamp-3`
+- Botao "Play" com icone, estilizado em primary (rosa)
+- Icones de estrela e compartilhar ao lado do botao
+- Transicao suave com `opacity-0 group-hover:opacity-100`
+- Fundo semi-transparente escuro (`bg-black/80`)
+
+O overlay so aparece em telas desktop (hidden em mobile via `md:group-hover:opacity-100`).
+
+### 4. Remover o `hover:scale-105` do card
+
+No ReelShort, o card nao aumenta de tamanho no hover - apenas o overlay aparece. O zoom sera removido para evitar sobreposicao visual.
 
 ## Arquivos Afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/CategoryRow.tsx` | Atualizar classes de largura dos cards (linha 25) |
-| `src/pages/Index.tsx` | Atualizar classes de largura na secao "Continue Assistindo" (linha 106) |
-| `src/components/HorizontalCarousel.tsx` | Atualizar `visibleCards` no calculo de scroll: desktop 7->6, tablet 4->3 (linha 44) |
+| `src/pages/Index.tsx` | Adicionar `synopsis` ao SELECT da query |
+| `src/components/SeriesCard.tsx` | Adicionar overlay com play, sinopse e icones no hover |
+| `src/components/CategoryRow.tsx` | Passar `synopsis` no objeto de serie |
 
 ## Detalhes Tecnicos
 
-### HorizontalCarousel.tsx (linha 44)
-Alterar a logica de scroll:
-```
-// Antes
-const visibleCards = w >= 1024 ? 7 : w >= 768 ? 4 : 2;
-
-// Depois  
-const visibleCards = w >= 1024 ? 6 : w >= 768 ? 3 : 2;
-```
-
-### CategoryRow.tsx (linha 25)
-```
-// Antes
-w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_3rem)/4)] lg:w-[calc((100%_-_6rem)/7)]
-
-// Depois
-w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_2rem)/3)] lg:w-[calc((100%_-_5rem)/6)]
-```
-
-### Index.tsx (linha 106) - secao Continue Assistindo
-Mesma alteracao de classes que o CategoryRow.
-
-## Resultado
-
-- Cards ~25% maiores no desktop
-- Cards ~33% maiores no tablet
-- Visual mais proximo do ReelShort
-- Setas de navegacao aparecem com 7+ series (desktop) ou 4+ (tablet)
+O overlay fica posicionado na parte inferior do card (`absolute bottom-0`) com padding e ocupa cerca de metade da altura do card. A animacao usa classes Tailwind nativas (`transition-opacity duration-300`). Os icones de estrela e compartilhar serao do Lucide (`Star`, `Share2`). O botao Play navega para `/series/{id}`.
