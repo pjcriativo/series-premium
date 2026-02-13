@@ -22,7 +22,7 @@ const CategoryRow = React.forwardRef<HTMLElement, CategoryRowProps>(
         {series.map((s) => (
           <div
             key={s.id}
-            className="w-[calc((100%_-_0.75rem)/2)] md:w-[calc((100%_-_2.25rem)/4)] lg:w-[calc((100%_-_4.5rem)/7)] flex-shrink-0"
+            className="w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_3rem)/4)] lg:w-[calc((100%_-_6rem)/7)] flex-shrink-0"
           >
             <SeriesCard series={s} />
           </div>
