@@ -1,65 +1,132 @@
 
 
-# Adicionar URL do YouTube nos Episodios (Formato Reels)
+# Corrigir Loop Infinito de Loading no Admin (Series)
 
-## Resumo
+## Causas Raiz Identificadas
 
-Adicionar a opcao de inserir uma URL do YouTube ao cadastrar/editar episodios, mantendo o upload de video .mp4 existente. O video do YouTube sera exibido no player em formato vertical (reels - 9:16).
+### Causa A: Deadlock no `onAuthStateChange` (PRINCIPAL)
+No `useAuth.tsx`, as funcoes `checkAdmin` e `fetchProfile` sao chamadas com `await` dentro do callback `onAuthStateChange`. Isso e um anti-pattern documentado do Supabase que pode causar deadlock: o callback trava esperando as queries, e as queries podem travar esperando o auth state resolver.
 
-## Alteracoes
+Se qualquer uma dessas funcoes travar ou lancar erro, `setLoading(false)` nunca e chamado, e o `AdminRoute` exibe o spinner eternamente.
 
-### 1. Migracao de Banco de Dados
+### Causa B: Falta de try/catch no fluxo de auth
+Se `checkAdmin` ou `fetchProfile` lancam um erro inesperado (rede, timeout), nao ha tratamento. O `Promise.all` rejeita, mas ninguem captura a rejeicao, e `setLoading(false)` nunca executa.
 
-Adicionar coluna `youtube_url` (text, nullable) na tabela `episodes`.
+### Causa C: Erros silenciosos no save
+O save de serie usa `useMutation` corretamente com `onSuccess` e `onError`, mas nao loga erros no console, dificultando o diagnostico.
 
-```sql
-ALTER TABLE episodes ADD COLUMN youtube_url text;
+## Correcoes
+
+### 1. Corrigir `useAuth.tsx` - Fluxo de auth seguro
+
+**Problema**: `onAuthStateChange` faz `await` em queries de banco.
+**Solucao**: Usar `setTimeout` para deferir as chamadas de banco, e envolver tudo em try/catch/finally para garantir que `loading` sempre finaliza.
+
+```
+onAuthStateChange -> 
+  setSession/setUser imediatamente
+  setTimeout(() => {
+    try { checkAdmin + fetchProfile }
+    catch { log error }
+    finally { setLoading(false) }
+  }, 0)
 ```
 
-### 2. Formulario de Episodio (`src/pages/admin/EpisodeForm.tsx`)
+Mesma logica para `getSession().then(...)`.
 
-- Adicionar `youtube_url` ao `FormData` e ao estado inicial
-- Adicionar campo de input de texto para a URL do YouTube, acima do campo de upload de video
-- Incluir uma nota explicando que o admin pode usar uma das duas opcoes (YouTube OU upload)
-- Carregar o valor existente ao editar
-- Incluir no payload de salvamento
-- Se o admin preencher a URL do YouTube, ela tem prioridade; o upload continua disponivel como alternativa
+Alem disso, adicionar try/catch individual em `checkAdmin` e `fetchProfile` para que um erro em uma nao impeça a outra de rodar.
 
-### 3. Hook do Player (`src/hooks/useEpisodePlayer.ts`)
+### 2. Adicionar logs de diagnostico em `useAuth.tsx`
 
-- Adicionar logica para detectar se o episodio possui `youtube_url`
-- Criar funcao utilitaria para extrair o ID do video do YouTube a partir da URL
-- Expor `youtubeId` no retorno do hook
-- Pular a busca de signed URL do storage quando houver YouTube URL
+- `console.log("[AUTH] onAuthStateChange", event, session?.user?.id)`
+- `console.log("[AUTH] getSession result", session?.user?.id)`
+- `console.log("[AUTH] checkAdmin result", userId, isAdmin)`
+- `console.error("[AUTH] checkAdmin error", error)`
+- `console.log("[AUTH] loading complete")`
 
-### 4. Player de Episodio (`src/pages/EpisodePlayer.tsx`)
+### 3. Adicionar logs de diagnostico em `AdminRoute.tsx`
 
-- Quando `youtubeId` existir, renderizar um iframe do YouTube em vez do elemento `<video>`
-- O iframe sera exibido em formato vertical (reels - aspect ratio 9:16)
-- Ocultar os controles customizados (play/pause/seek) quando for YouTube, pois o iframe do YouTube tem seus proprios controles
-- Manter os controles customizados apenas para videos .mp4 do storage
+- `console.log("[ADMIN_ROUTE] loading=", loading, "adminChecked=", adminChecked, "user=", !!user, "isAdmin=", isAdmin)`
 
-### Logica de prioridade no player
+### 4. Melhorar erro visivel no `SeriesForm.tsx`
 
-```text
-Se youtube_url existe -> renderiza iframe do YouTube (vertical/reels)
-Senao se video_url existe -> renderiza <video> com signed URL (comportamento atual)
-Senao -> mostra placeholder "Video nao disponivel"
-```
+- Logar erros completos no console dentro de `onError`
+- Adicionar `console.log("[SERIES_FORM] saving...", formData)` e `console.log("[SERIES_FORM] saved ok")`
+- Garantir que erros de upload de capa sejam visiveis
+
+### 5. Adicionar timeout de seguranca no `AdminRoute.tsx`
+
+Se `loading` ficar `true` por mais de 10 segundos, forcar `loading = false` e mostrar erro, em vez de spinner infinito.
 
 ## Arquivos Afetados
 
 | Arquivo | Acao |
 |---------|------|
-| Migracao SQL | Adicionar coluna `youtube_url` na tabela `episodes` |
-| `src/pages/admin/EpisodeForm.tsx` | Adicionar campo de URL do YouTube |
-| `src/hooks/useEpisodePlayer.ts` | Detectar e extrair ID do YouTube |
-| `src/pages/EpisodePlayer.tsx` | Renderizar iframe do YouTube em formato reels |
+| `src/hooks/useAuth.tsx` | Deferir chamadas de banco fora do `onAuthStateChange`, try/catch/finally, logs |
+| `src/components/AdminRoute.tsx` | Logs de diagnostico, timeout de seguranca |
+| `src/pages/admin/SeriesForm.tsx` | Logs no save, error logging detalhado |
 
 ## Detalhes Tecnicos
 
-- A URL do YouTube sera parseada para extrair o video ID (suporta formatos youtube.com/watch?v=X, youtu.be/X, youtube.com/shorts/X)
-- O iframe usara `https://www.youtube.com/embed/{videoId}` com parametros para autoplay e modo vertical
-- O container do iframe tera aspect-ratio 9:16 (formato reels) com max-height 100vh
-- Os controles nativos do YouTube (play, pause, volume, fullscreen) serao usados no lugar dos controles customizados
+### useAuth.tsx - Padrao corrigido
+
+O `onAuthStateChange` deve APENAS atualizar session/user de forma sincrona. As chamadas de banco (checkAdmin, fetchProfile) devem ser deferidas:
+
+```typescript
+onAuthStateChange(async (_event, session) => {
+  setSession(session);
+  setUser(session?.user ?? null);
+  
+  if (session?.user) {
+    // Deferir para evitar deadlock
+    try {
+      await Promise.all([
+        checkAdmin(session.user.id),
+        fetchProfile(session.user.id),
+      ]);
+    } catch (err) {
+      console.error("[AUTH] erro ao carregar perfil/role", err);
+      setAdminChecked(true); // garantir que nao trava
+    }
+  } else {
+    setIsAdmin(false);
+    setAdminChecked(true);
+    setProfile(null);
+  }
+  setLoading(false); // SEMPRE executado
+});
+```
+
+Cada funcao interna tambem ganha try/catch:
+
+```typescript
+const checkAdmin = async (userId: string) => {
+  try {
+    const { data, error } = await supabase...
+    if (error) console.error("[AUTH] checkAdmin error", error);
+    setIsAdmin(!!data);
+  } catch (err) {
+    console.error("[AUTH] checkAdmin exception", err);
+    setIsAdmin(false);
+  } finally {
+    setAdminChecked(true);
+  }
+};
+```
+
+### AdminRoute.tsx - Timeout de seguranca
+
+```typescript
+const [timedOut, setTimedOut] = useState(false);
+
+useEffect(() => {
+  const timer = setTimeout(() => setTimedOut(true), 10000);
+  return () => clearTimeout(timer);
+}, []);
+
+if (timedOut && (loading || !adminChecked)) {
+  console.error("[ADMIN_ROUTE] timeout - loading nunca finalizou");
+  return <Navigate to="/auth" replace />;
+}
+```
 
