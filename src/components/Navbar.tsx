@@ -37,6 +37,12 @@ const Navbar = () => {
           <Link to="/search" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
             Categorias
           </Link>
+          <Link to="/fan-club" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+            Fã-Clube
+          </Link>
+          <Link to="/brand" className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors">
+            Marca
+          </Link>
         </div>
       </div>
 
