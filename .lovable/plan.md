@@ -1,132 +1,76 @@
 
 
-# Corrigir Loop Infinito de Loading no Admin (Series)
+# Carrossel Horizontal Estilo ReelShort
 
-## Causas Raiz Identificadas
+## Resumo
 
-### Causa A: Deadlock no `onAuthStateChange` (PRINCIPAL)
-No `useAuth.tsx`, as funcoes `checkAdmin` e `fetchProfile` sao chamadas com `await` dentro do callback `onAuthStateChange`. Isso e um anti-pattern documentado do Supabase que pode causar deadlock: o callback trava esperando as queries, e as queries podem travar esperando o auth state resolver.
+Substituir o scroll livre atual das linhas de categorias por um carrossel horizontal controlado por setas laterais, com responsividade (7 cards desktop, 4 tablet, 2 mobile) e estilo dark inspirado no ReelShort.
 
-Se qualquer uma dessas funcoes travar ou lancar erro, `setLoading(false)` nunca e chamado, e o `AdminRoute` exibe o spinner eternamente.
+## Alteracoes
 
-### Causa B: Falta de try/catch no fluxo de auth
-Se `checkAdmin` ou `fetchProfile` lancam um erro inesperado (rede, timeout), nao ha tratamento. O `Promise.all` rejeita, mas ninguem captura a rejeicao, e `setLoading(false)` nunca executa.
+### 1. Criar componente `HorizontalCarousel` (`src/components/HorizontalCarousel.tsx`)
 
-### Causa C: Erros silenciosos no save
-O save de serie usa `useMutation` corretamente com `onSuccess` e `onError`, mas nao loga erros no console, dificultando o diagnostico.
+Componente reutilizavel que recebe titulo e children (os cards). Usa `useRef` para controlar scroll via `scrollBy` com `behavior: "smooth"`. Botoes esquerda/direita semi-transparentes sobrepostos, visiveis apenas quando ha scroll disponivel naquela direcao (controlado por estado atualizado via `onScroll` e `ResizeObserver`).
 
-## Correcoes
+Responsividade dos cards calculada via CSS grid ou largura percentual:
+- Desktop (>1024px): `calc((100% - 6*gap) / 7)` -- 7 cards
+- Tablet (768-1024px): `calc((100% - 3*gap) / 4)` -- 4 cards  
+- Mobile (<768px): `calc((100% - 1*gap) / 2)` -- 2 cards
 
-### 1. Corrigir `useAuth.tsx` - Fluxo de auth seguro
+Container: `overflow-x-hidden`, scroll controlado apenas por botoes.
 
-**Problema**: `onAuthStateChange` faz `await` em queries de banco.
-**Solucao**: Usar `setTimeout` para deferir as chamadas de banco, e envolver tudo em try/catch/finally para garantir que `loading` sempre finaliza.
+Botoes: `position: absolute`, `top: 50%`, fundo `bg-black/50 hover:bg-black/80`, icones `ChevronLeft`/`ChevronRight` do Lucide.
 
-```
-onAuthStateChange -> 
-  setSession/setUser imediatamente
-  setTimeout(() => {
-    try { checkAdmin + fetchProfile }
-    catch { log error }
-    finally { setLoading(false) }
-  }, 0)
-```
+### 2. Atualizar `CategoryRow` (`src/components/CategoryRow.tsx`)
 
-Mesma logica para `getSession().then(...)`.
+Substituir o `div` com `overflow-x-auto scrollbar-hide` pelo novo `HorizontalCarousel`. Cada `SeriesCard` sera envolvido em um wrapper com largura responsiva.
 
-Alem disso, adicionar try/catch individual em `checkAdmin` e `fetchProfile` para que um erro em uma nao impeça a outra de rodar.
+### 3. Atualizar `SeriesCard` (`src/components/SeriesCard.tsx`)
 
-### 2. Adicionar logs de diagnostico em `useAuth.tsx`
+Remover a largura fixa (`w-36 md:w-44`) e `flex-shrink-0` do card. O card passa a ocupar 100% do wrapper do carrossel. Adicionar `hover:scale-105 transition-transform duration-300`.
 
-- `console.log("[AUTH] onAuthStateChange", event, session?.user?.id)`
-- `console.log("[AUTH] getSession result", session?.user?.id)`
-- `console.log("[AUTH] checkAdmin result", userId, isAdmin)`
-- `console.error("[AUTH] checkAdmin error", error)`
-- `console.log("[AUTH] loading complete")`
+### 4. Atualizar `Index.tsx` -- secao "Continue Assistindo"
 
-### 3. Adicionar logs de diagnostico em `AdminRoute.tsx`
-
-- `console.log("[ADMIN_ROUTE] loading=", loading, "adminChecked=", adminChecked, "user=", !!user, "isAdmin=", isAdmin)`
-
-### 4. Melhorar erro visivel no `SeriesForm.tsx`
-
-- Logar erros completos no console dentro de `onError`
-- Adicionar `console.log("[SERIES_FORM] saving...", formData)` e `console.log("[SERIES_FORM] saved ok")`
-- Garantir que erros de upload de capa sejam visiveis
-
-### 5. Adicionar timeout de seguranca no `AdminRoute.tsx`
-
-Se `loading` ficar `true` por mais de 10 segundos, forcar `loading = false` e mostrar erro, em vez de spinner infinito.
+Substituir o scroll livre inline da secao "Continue Assistindo" pelo mesmo `HorizontalCarousel`, para manter consistencia visual.
 
 ## Arquivos Afetados
 
 | Arquivo | Acao |
 |---------|------|
-| `src/hooks/useAuth.tsx` | Deferir chamadas de banco fora do `onAuthStateChange`, try/catch/finally, logs |
-| `src/components/AdminRoute.tsx` | Logs de diagnostico, timeout de seguranca |
-| `src/pages/admin/SeriesForm.tsx` | Logs no save, error logging detalhado |
+| `src/components/HorizontalCarousel.tsx` | Criar -- componente de carrossel com setas |
+| `src/components/CategoryRow.tsx` | Editar -- usar HorizontalCarousel |
+| `src/components/SeriesCard.tsx` | Editar -- remover largura fixa, hover scale |
+| `src/pages/Index.tsx` | Editar -- usar HorizontalCarousel na secao Continue Assistindo |
 
 ## Detalhes Tecnicos
 
-### useAuth.tsx - Padrao corrigido
+### HorizontalCarousel -- logica dos botoes
 
-O `onAuthStateChange` deve APENAS atualizar session/user de forma sincrona. As chamadas de banco (checkAdmin, fetchProfile) devem ser deferidas:
+```text
+onScroll / ResizeObserver:
+  canScrollLeft = container.scrollLeft > 0
+  canScrollRight = container.scrollLeft + container.clientWidth < container.scrollWidth
 
-```typescript
-onAuthStateChange(async (_event, session) => {
-  setSession(session);
-  setUser(session?.user ?? null);
-  
-  if (session?.user) {
-    // Deferir para evitar deadlock
-    try {
-      await Promise.all([
-        checkAdmin(session.user.id),
-        fetchProfile(session.user.id),
-      ]);
-    } catch (err) {
-      console.error("[AUTH] erro ao carregar perfil/role", err);
-      setAdminChecked(true); // garantir que nao trava
-    }
-  } else {
-    setIsAdmin(false);
-    setAdminChecked(true);
-    setProfile(null);
-  }
-  setLoading(false); // SEMPRE executado
-});
+scroll(direction):
+  cardWidth = container.firstChild.offsetWidth + gap
+  visibleCards = window >= 1024 ? 7 : window >= 768 ? 4 : 2
+  container.scrollBy({ left: direction * cardWidth * visibleCards, behavior: "smooth" })
 ```
 
-Cada funcao interna tambem ganha try/catch:
+### Responsividade dos cards (CSS)
 
-```typescript
-const checkAdmin = async (userId: string) => {
-  try {
-    const { data, error } = await supabase...
-    if (error) console.error("[AUTH] checkAdmin error", error);
-    setIsAdmin(!!data);
-  } catch (err) {
-    console.error("[AUTH] checkAdmin exception", err);
-    setIsAdmin(false);
-  } finally {
-    setAdminChecked(true);
-  }
-};
+Cada card wrapper tera classes Tailwind:
+```
+w-[calc((100%-1*0.75rem)/2)]    // mobile: 2 cards, gap-3
+md:w-[calc((100%-3*0.75rem)/4)] // tablet: 4 cards
+lg:w-[calc((100%-6*0.75rem)/7)] // desktop: 7 cards
+flex-shrink-0
 ```
 
-### AdminRoute.tsx - Timeout de seguranca
+### Estilo visual
 
-```typescript
-const [timedOut, setTimedOut] = useState(false);
-
-useEffect(() => {
-  const timer = setTimeout(() => setTimedOut(true), 10000);
-  return () => clearTimeout(timer);
-}, []);
-
-if (timedOut && (loading || !adminChecked)) {
-  console.error("[ADMIN_ROUTE] timeout - loading nunca finalizou");
-  return <Navigate to="/auth" replace />;
-}
-```
+- Container com `max-w-7xl mx-auto px-4`
+- Cards com `rounded-lg overflow-hidden hover:scale-105 transition-transform duration-300`
+- Botoes com `bg-black/50 hover:bg-black/80 rounded-full p-2` posicionados absolutos nas laterais
+- Aspect ratio dos cards: `aspect-[2/3]` (mantido do atual)
 
