@@ -1,48 +1,54 @@
 
 
-# Corrigir Tela Preta / Loop de Carregamento no Hero Slider
+# Corrigir Tela Preta Definitivamente
 
-## Causa Raiz
+## Diagnostico
 
-O plugin `Autoplay({ delay: 5000, stopOnInteraction: false })` esta sendo recriado a cada render do componente `HeroSlider`. Isso faz o Embla Carousel destruir e reinicializar repetidamente. Durante re-renders rapidos (como mudancas de estado de autenticacao no refresh da pagina), o Embla tenta acessar elementos do DOM que ja foram removidos, causando o erro:
+A tela preta ocorre de forma intermitente, especialmente ao recarregar a pagina estando logado. O Embla Carousel pode crashar durante re-renders rapidos (mudancas de estado de autenticacao), e como nao ha um Error Boundary, o erro derruba toda a arvore React, resultando na tela preta.
+
+Alem disso, os componentes `HeroSlider`, `CategoryRow` e `SeriesCard` geram warnings no console porque recebem refs sem suporta-los (necessario `forwardRef`).
+
+## Solucao em 3 Partes
+
+### 1. Criar um ErrorBoundary generico
+
+Novo arquivo: `src/components/ErrorBoundary.tsx`
+
+Um componente de classe React que captura erros em seus filhos e renderiza um fallback em vez de derrubar a pagina inteira. Quando o HeroSlider crashar, apenas ele some - o resto da pagina continua funcionando.
+
+### 2. Proteger o HeroSlider com ErrorBoundary no Index
+
+No `src/pages/Index.tsx`, envolver o `<HeroSlider>` com o ErrorBoundary para que qualquer crash do Embla Carousel seja contido e nao afete o restante da pagina.
 
 ```
-TypeError: Cannot read properties of undefined (reading 'children')
+Antes:
+  {banners && banners.length > 0 && <HeroSlider banners={banners} />}
+
+Depois:
+  {banners && banners.length > 0 && (
+    <ErrorBoundary>
+      <HeroSlider banners={banners} />
+    </ErrorBoundary>
+  )}
 ```
 
-Esse erro nao e tratado (unhandled promise rejection), o que derruba toda a aplicacao e resulta na tela preta.
+### 3. Adicionar forwardRef nos componentes que recebem refs
 
-## Solucao
+Atualizar `HeroSlider`, `CategoryRow` e `SeriesCard` para usar `React.forwardRef`. Isso elimina os warnings e previne potenciais problemas com o sistema de refs do React.
 
-### Arquivo: `src/components/HeroSlider.tsx`
-
-1. **Estabilizar o plugin Autoplay** usando `useRef` para que a instancia seja criada apenas uma vez, evitando reinicializacoes desnecessarias do carrossel.
-
-2. **Adicionar tratamento de erro** com um guard no `useEffect` para evitar que o Embla tente operar em um estado invalido.
-
-### Antes (problema):
-```tsx
-const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [
-  Autoplay({ delay: 5000, stopOnInteraction: false }),
-]);
-```
-
-### Depois (correcao):
-```tsx
-import { useRef } from "react";
-
-const autoplay = useRef(Autoplay({ delay: 5000, stopOnInteraction: false }));
-
-const [emblaRef, emblaApi] = useEmblaCarousel({ loop: true }, [autoplay.current]);
-```
-
-## Impacto
-
-- Elimina a tela preta ao atualizar a pagina
-- Elimina o loop de carregamento
-- Nao altera a aparencia ou comportamento visual do carrossel
+## Arquivos Afetados
 
 | Arquivo | Acao |
 |---------|------|
-| `src/components/HeroSlider.tsx` | Estabilizar plugin Autoplay com useRef |
+| `src/components/ErrorBoundary.tsx` | Criar (novo) |
+| `src/pages/Index.tsx` | Envolver HeroSlider com ErrorBoundary |
+| `src/components/HeroSlider.tsx` | Adicionar forwardRef |
+| `src/components/CategoryRow.tsx` | Adicionar forwardRef |
+| `src/components/SeriesCard.tsx` | Adicionar forwardRef |
+
+## Resultado Esperado
+
+- A tela preta nao acontece mais, mesmo se o Embla crashar
+- Os warnings de refs no console sao eliminados
+- O carrossel se recupera automaticamente em caso de erro
 
