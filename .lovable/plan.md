@@ -1,103 +1,119 @@
 
+# Implementar Contadores Reais de Likes e Favoritos
 
-# Replicar Layout Exato do ReelShort no Player
+## Situacao Atual
+Os contadores de likes (4.5k) e favoritos/stars (106.5k) sao valores fixos no codigo. Para torna-los funcionais, precisamos criar tabelas no banco de dados e logica de interacao.
 
-## Diferencas Identificadas
+## Novas Tabelas no Supabase
 
-Comparando as capturas de tela do site original com nossa implementacao atual:
+### 1. `episode_likes`
+Armazena os likes dos usuarios em episodios.
 
-1. **Video e VERTICAL (9:16)**, nao landscape (16:9) - o video ocupa quase toda a altura da viewport em formato retrato
-2. **Proporcoes do layout** - Video centralizado horizontalmente, painel de info a direita com largura menor
-3. **Acoes (Heart, Star, Share)** - Exibidos em coluna vertical com contadores abaixo de cada icone, nao em linha horizontal
-4. **Secao "Plot of Episode X"** - Titulo separado antes da sinopse
-5. **Tags de categoria** - Multiplas tags com borda (nao apenas uma badge)
-6. **Grid de episodios** - 6 colunas, icones de lock em vermelho pequeno no canto superior direito, episodio atual com fundo roxo/primary
+| Coluna | Tipo | Detalhes |
+|--------|------|----------|
+| id | uuid | PK, default gen_random_uuid() |
+| user_id | uuid | NOT NULL |
+| episode_id | uuid | NOT NULL, FK episodes(id) |
+| created_at | timestamptz | default now() |
+| UNIQUE(user_id, episode_id) | | Evita likes duplicados |
 
-## Alteracoes Detalhadas
+RLS: usuarios podem SELECT/INSERT/DELETE os proprios likes.
 
-### 1. Video Vertical (9:16) em vez de Landscape
+### 2. `episode_favorites`
+Armazena os favoritos (star) dos usuarios em episodios.
 
-Trocar `aspect-video` (16:9) por um container vertical com aspect ratio 9:16. O video deve ocupar a maior parte da altura da viewport, centralizado na coluna esquerda.
+| Coluna | Tipo | Detalhes |
+|--------|------|----------|
+| id | uuid | PK, default gen_random_uuid() |
+| user_id | uuid | NOT NULL |
+| episode_id | uuid | NOT NULL, FK episodes(id) |
+| created_at | timestamptz | default now() |
+| UNIQUE(user_id, episode_id) | | Evita duplicados |
 
-```
-// Antes
-<div className="relative aspect-video bg-black rounded-lg overflow-hidden">
+RLS: usuarios podem SELECT/INSERT/DELETE os proprios favoritos.
 
-// Depois  
-<div className="relative bg-black rounded-lg overflow-hidden" style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }}>
-```
+## Views para Contagem
 
-### 2. Ajustar Proporcoes das Colunas
+Criar views ou fazer contagem direta via queries:
+- Contar likes por episodio: `SELECT count(*) FROM episode_likes WHERE episode_id = ?`
+- Contar favoritos por episodio: `SELECT count(*) FROM episode_favorites WHERE episode_id = ?`
 
-O video vertical e mais estreito, entao a coluna esquerda pode ser ~55% e a direita ~45%. A coluna direita deve alinhar ao topo do video.
+## Alteracoes no Codigo
 
-### 3. Reorganizar Painel de Informacoes
+### 1. `src/hooks/useEpisodePlayer.ts`
+Adicionar queries para:
+- Contagem total de likes do episodio atual
+- Contagem total de favoritos do episodio atual
+- Se o usuario atual ja deu like
+- Se o usuario atual ja favoritou
 
-Seguir a ordem exata do ReelShort:
-1. Breadcrumb (Home > Serie > Episodio X)
-2. Titulo grande: "Episodio X -- [titulo]"
-3. Nome da serie em texto menor
-4. Sinopse da serie
-5. Badge de categoria com borda
-6. Icones de acao (Heart, Star, Share) em LINHA com labels/contadores
-7. Titulo "Episodios"
-8. Grid numerico 6 colunas
+Adicionar funcoes de toggle:
+- `toggleLike()`: insere ou remove like
+- `toggleFavorite()`: insere ou remove favorito
 
-### 4. Icones de Acao com Contadores
+### 2. `src/pages/EpisodePlayer.tsx`
+- Substituir valores fixos (4.5k, 106.5k) pelos valores reais das queries
+- Adicionar estado visual ativo (icone preenchido) quando usuario ja interagiu
+- Adicionar logica de clique nos botoes (redirecionar para login se nao autenticado)
+- Formatar numeros grandes (ex: 1234 -> 1.2k)
 
-Trocar os botoes pequenos por icones maiores dispostos em uma linha com texto embaixo:
-
-```
-[Heart]    [Star]     [Share]
-  4.5k     106.5k     Share
-```
-
-### 5. Grid de Episodios Refinado
-
-- 6 colunas
-- Botoes com bordas mais definidas (`border border-border`)
-- Episodio atual com fundo primary (roxo)
-- Lock icons menores e vermelhos no canto superior direito
+### 3. Botao Share
+Implementar compartilhamento usando a Web Share API (navigator.share) com fallback para copiar URL.
 
 ## Arquivos Afetados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/pages/EpisodePlayer.tsx` | Redesenho completo: video vertical 9:16, painel lateral reorganizado, icones com contadores, grid refinado |
+| Migracao SQL | Criar tabelas episode_likes e episode_favorites com RLS |
+| `src/hooks/useEpisodePlayer.ts` | Queries de contagem + toggleLike/toggleFavorite |
+| `src/pages/EpisodePlayer.tsx` | Conectar botoes aos dados reais + estados visuais |
 
 ## Detalhes Tecnicos
 
-### Estrutura Final do Layout
+### Migracao SQL
+```sql
+CREATE TABLE episode_likes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  episode_id uuid NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(user_id, episode_id)
+);
 
+ALTER TABLE episode_likes ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can count likes" ON episode_likes
+  FOR SELECT USING (true);
+CREATE POLICY "Auth users can insert own likes" ON episode_likes
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Auth users can delete own likes" ON episode_likes
+  FOR DELETE USING (auth.uid() = user_id);
+
+CREATE TABLE episode_favorites (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  episode_id uuid NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  UNIQUE(user_id, episode_id)
+);
+
+ALTER TABLE episode_favorites ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone can count favorites" ON episode_favorites
+  FOR SELECT USING (true);
+CREATE POLICY "Auth users can insert own favorites" ON episode_favorites
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Auth users can delete own favorites" ON episode_favorites
+  FOR DELETE USING (auth.uid() = user_id);
 ```
-<main className="pt-16 px-4 lg:px-8 pb-20 md:pb-8">
-  <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
-    
-    <!-- Video Column (~55%) -->
-    <div className="lg:w-[55%] flex justify-center lg:justify-end">
-      <div style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }}
-           className="w-full max-w-md bg-black rounded-lg overflow-hidden relative">
-        <!-- video/iframe/placeholder -->
-      </div>
-    </div>
-    
-    <!-- Info Column (~45%) -->
-    <div className="lg:w-[45%] space-y-4 lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto">
-      <!-- breadcrumb -->
-      <!-- titulo + serie -->
-      <!-- sinopse -->
-      <!-- badge categoria -->
-      <!-- acoes com contadores -->
-      <!-- grid episodios -->
-    </div>
-    
-  </div>
-</main>
+
+### Formatacao de Numeros
+```typescript
+const formatCount = (n: number) => {
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return n.toString();
+};
 ```
 
-### YouTube Embed Vertical
-Para iframes do YouTube, ajustar para preencher o container vertical mantendo o aspect ratio do video.
-
-### Mobile
-No mobile, o video fica em cima (largura total, aspect 9:16 com altura limitada) e o painel de info fica embaixo com scroll natural da pagina.
-
+### Toggle Like/Favorite
+Ao clicar, verificar se usuario esta logado. Se nao, redirecionar para /auth. Se sim, verificar se ja existe o registro e inserir/remover conforme necessario, invalidando as queries de contagem.
