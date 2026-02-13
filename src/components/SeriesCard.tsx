@@ -1,5 +1,5 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Play, Star, Share2 } from "lucide-react";
 import { getSeriesCover } from "@/lib/demo-covers";
 
@@ -11,11 +11,13 @@ interface SeriesCardProps {
     category_name?: string | null;
     episode_count?: number;
     synopsis?: string | null;
+    first_episode_id?: string | null;
   };
 }
 
 const SeriesCard = React.forwardRef<HTMLAnchorElement, SeriesCardProps>(
   ({ series }, ref) => {
+    const navigate = useNavigate();
     return (
       <Link
         ref={ref}
@@ -54,9 +56,16 @@ const SeriesCard = React.forwardRef<HTMLAnchorElement, SeriesCardProps>(
               </p>
             )}
             <div className="flex items-center gap-2">
-              <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-primary text-primary-foreground">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  navigate(series.first_episode_id ? `/watch/${series.first_episode_id}` : `/series/${series.id}`);
+                }}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
                 <Play size={16} fill="currentColor" />
-              </span>
+              </button>
               <span className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-secondary/50 text-foreground">
                 <Star size={14} />
               </span>

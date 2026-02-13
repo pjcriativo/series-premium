@@ -11,6 +11,7 @@ interface CategoryRowProps {
     category_name?: string | null;
     episode_count?: number;
     synopsis?: string | null;
+    first_episode_id?: string | null;
   }[];
 }
 

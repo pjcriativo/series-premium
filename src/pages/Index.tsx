@@ -38,6 +38,27 @@ const Index = () => {
         .eq("is_published", true)
         .order("created_at", { ascending: false });
       if (error) throw error;
+
+      // Fetch first published episode for each series
+      const seriesIds = (data || []).map((s: any) => s.id);
+      if (seriesIds.length > 0) {
+        const { data: firstEpisodes } = await supabase
+          .from("episodes")
+          .select("id, series_id")
+          .in("series_id", seriesIds)
+          .eq("is_published", true)
+          .eq("episode_number", 1);
+
+        const episodeMap = new Map(
+          (firstEpisodes || []).map((ep: any) => [ep.series_id, ep.id])
+        );
+
+        return (data || []).map((s: any) => ({
+          ...s,
+          first_episode_id: episodeMap.get(s.id) || null,
+        }));
+      }
+
       return data;
     },
   });
@@ -89,6 +110,7 @@ const Index = () => {
         category_name: catName,
         episode_count: s.episodes?.length || 0,
         synopsis: s.synopsis,
+        first_episode_id: s.first_episode_id || null,
       });
     });
     return Object.values(groups);
