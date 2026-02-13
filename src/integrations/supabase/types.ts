@@ -100,6 +100,64 @@ export type Database = {
         }
         Relationships: []
       }
+      episode_favorites: {
+        Row: {
+          created_at: string | null
+          episode_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          episode_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          episode_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_favorites_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      episode_likes: {
+        Row: {
+          created_at: string | null
+          episode_id: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          episode_id: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          episode_id?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_likes_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       episode_unlocks: {
         Row: {
           episode_id: string

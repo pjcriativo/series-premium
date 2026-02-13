@@ -11,6 +11,7 @@ import PaywallModal from "@/components/PaywallModal";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
 import { useEpisodePlayer } from "@/hooks/useEpisodePlayer";
+import { useEpisodeSocial, formatCount } from "@/hooks/useEpisodeSocial";
 import { cn } from "@/lib/utils";
 
 const EpisodePlayer = () => {
@@ -26,6 +27,8 @@ const EpisodePlayer = () => {
     handleReplay, handleNext, handleSeek, formatTime,
     navigate, queryClient,
   } = useEpisodePlayer();
+
+  const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
 
   const isLoading = epLoading || accessLoading;
 
@@ -220,15 +223,15 @@ const EpisodePlayer = () => {
 
             {/* Action Icons with Counters */}
             <div className="flex items-center gap-6">
-              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
-                <Heart className="h-5 w-5" />
-                <span className="text-xs">4.5k</span>
+              <button onClick={toggleLike} className={cn("flex flex-col items-center gap-1 transition-colors", hasLiked ? "text-destructive" : "text-muted-foreground hover:text-foreground")}>
+                <Heart className={cn("h-5 w-5", hasLiked && "fill-current")} />
+                <span className="text-xs">{formatCount(likeCount)}</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
-                <Star className="h-5 w-5" />
-                <span className="text-xs">106.5k</span>
+              <button onClick={toggleFavorite} className={cn("flex flex-col items-center gap-1 transition-colors", hasFavorited ? "text-yellow-500" : "text-muted-foreground hover:text-foreground")}>
+                <Star className={cn("h-5 w-5", hasFavorited && "fill-current")} />
+                <span className="text-xs">{formatCount(favoriteCount)}</span>
               </button>
-              <button className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={handleShare} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
                 <Share2 className="h-5 w-5" />
                 <span className="text-xs">Share</span>
               </button>
