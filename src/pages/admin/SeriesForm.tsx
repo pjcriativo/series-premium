@@ -124,11 +124,15 @@ const SeriesForm = () => {
       }
     },
     onSuccess: () => {
+      console.log("[SERIES_FORM] saved ok");
       queryClient.invalidateQueries({ queryKey: ["admin-series"] });
       toast({ title: id ? "Série atualizada" : "Série criada" });
       navigate("/admin/series");
     },
-    onError: (err: any) => toast({ title: "Erro", description: err.message, variant: "destructive" }),
+    onError: (err: any) => {
+      console.error("[SERIES_FORM] save error", err);
+      toast({ title: "Erro", description: err.message, variant: "destructive" });
+    },
   });
 
   return (
