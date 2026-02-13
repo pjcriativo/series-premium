@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ const EpisodePlayer = () => {
   } = useEpisodePlayer();
 
   const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
+
+  const [paywallEpisode, setPaywallEpisode] = useState<{ id: string; title: string; episode_number: number; price_coins: number } | null>(null);
 
   const isLoading = epLoading || accessLoading;
 
@@ -248,7 +251,12 @@ const EpisodePlayer = () => {
                     <button
                       key={ep.id}
                       onClick={() => {
-                        if (ep.id !== episode?.id) navigate(`/watch/${ep.id}`);
+                        if (ep.id === episode?.id) return;
+                        if (accessible) {
+                          navigate(`/watch/${ep.id}`);
+                        } else {
+                          setPaywallEpisode(ep);
+                        }
                       }}
                       className={cn(
                         "relative aspect-square rounded-md flex items-center justify-center text-sm font-medium transition-colors border",
@@ -270,7 +278,7 @@ const EpisodePlayer = () => {
         </div>
       </main>
 
-      {/* Paywall modal */}
+      {/* Paywall modal - next episode (end screen) */}
       {nextEpisode && (
         <PaywallModal
           open={showPaywall}
@@ -285,6 +293,27 @@ const EpisodePlayer = () => {
             setShowPaywall(false);
             navigate(`/watch/${nextEpisode.id}`);
           }}
+        />
+      )}
+
+      {/* Paywall modal - grid locked episode */}
+      {paywallEpisode && (
+        <PaywallModal
+          open={!!paywallEpisode}
+          onOpenChange={(open) => { if (!open) setPaywallEpisode(null); }}
+          episodeTitle={`Ep. ${paywallEpisode.episode_number} — ${paywallEpisode.title}`}
+          episodeId={paywallEpisode.id}
+          priceCoin={paywallEpisode.price_coins}
+          balance={walletBalance}
+          seriesId={seriesId}
+          seriesTitle={seriesTitle}
+          onUnlocked={() => {
+            queryClient.invalidateQueries({ queryKey: ["wallet"] });
+            queryClient.invalidateQueries({ queryKey: ["user-episode-unlocks", seriesId] });
+            queryClient.invalidateQueries({ queryKey: ["episode-unlock", paywallEpisode.id] });
+            setPaywallEpisode(null);
+          }}
+          onNavigateToWatch={(epId) => navigate(`/watch/${epId}`)}
         />
       )}
 
