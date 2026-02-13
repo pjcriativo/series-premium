@@ -1,5 +1,6 @@
 import React from "react";
 import SeriesCard from "@/components/SeriesCard";
+import HorizontalCarousel from "@/components/HorizontalCarousel";
 
 interface CategoryRowProps {
   title: string;
@@ -13,18 +14,20 @@ interface CategoryRowProps {
 }
 
 const CategoryRow = React.forwardRef<HTMLElement, CategoryRowProps>(
-  ({ title, series }, ref) => {
+  ({ title, series }, _ref) => {
     if (!series.length) return null;
 
     return (
-      <section ref={ref} className="mb-8">
-        <h2 className="text-lg font-bold text-foreground mb-3 px-4">{title}</h2>
-        <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory scrollbar-hide">
-          {series.map((s) => (
-            <SeriesCard key={s.id} series={s} />
-          ))}
-        </div>
-      </section>
+      <HorizontalCarousel title={title}>
+        {series.map((s) => (
+          <div
+            key={s.id}
+            className="w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2.25rem)/4)] lg:w-[calc((100%-4.5rem)/7)] flex-shrink-0"
+          >
+            <SeriesCard series={s} />
+          </div>
+        ))}
+      </HorizontalCarousel>
     );
   }
 );

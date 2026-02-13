@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getSeriesCover } from "@/lib/demo-covers";
+import HorizontalCarousel from "@/components/HorizontalCarousel";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
 import HeroSlider from "@/components/HeroSlider";
@@ -96,23 +97,24 @@ const Index = () => {
             {user && continueWatching && continueWatching.length > 0 && (
               <div className="mt-6 w-full flex justify-center px-4 md:px-6">
                 <div className="w-full max-w-7xl">
-                  <section className="mb-8">
-                    <h2 className="text-lg font-bold text-foreground mb-3 px-4">Continue Assistindo</h2>
-                    <div className="flex gap-3 overflow-x-auto px-4 pb-2 snap-x snap-mandatory scrollbar-hide">
-                      {continueWatching.map((item: any) => {
-                        const cover = getSeriesCover(item.series.id, item.series.cover_url);
-                        return (
+                  <HorizontalCarousel title="Continue Assistindo">
+                    {continueWatching.map((item: any) => {
+                      const cover = getSeriesCover(item.series.id, item.series.cover_url);
+                      return (
+                        <div
+                          key={item.series_id}
+                          className="w-[calc((100%-0.75rem)/2)] md:w-[calc((100%-2.25rem)/4)] lg:w-[calc((100%-4.5rem)/7)] flex-shrink-0"
+                        >
                           <Link
-                            key={item.series_id}
                             to={`/series/${item.series.id}`}
-                            className="group flex-shrink-0 w-36 md:w-44 snap-start"
+                            className="group block w-full transition-transform duration-300 hover:scale-105"
                           >
                             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-2">
                               {cover ? (
                                 <img
                                   src={cover}
                                   alt={item.series.title}
-                                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                                  className="w-full h-full object-cover"
                                   loading="lazy"
                                 />
                               ) : (
@@ -128,10 +130,10 @@ const Index = () => {
                             </div>
                             <h3 className="text-sm font-medium text-foreground truncate">{item.series.title}</h3>
                           </Link>
-                        );
-                      })}
-                    </div>
-                  </section>
+                        </div>
+                      );
+                    })}
+                  </HorizontalCarousel>
                 </div>
               </div>
             )}
