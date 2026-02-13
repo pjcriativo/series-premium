@@ -8,7 +8,7 @@ import { useEpisodePlayer } from "@/hooks/useEpisodePlayer";
 const EpisodePlayer = () => {
   const {
     episode, epLoading, accessLoading, hasAccess,
-    videoRef, videoUrl,
+    videoRef, videoUrl, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
     nextEpisode, isNextAccessible, walletBalance,
@@ -48,8 +48,18 @@ const EpisodePlayer = () => {
       </div>
 
       {/* Video area */}
-      <div className="flex-1 flex items-center justify-center" onClick={togglePlay}>
-        {videoUrl ? (
+      <div className="flex-1 flex items-center justify-center" onClick={youtubeId ? undefined : togglePlay}>
+        {youtubeId ? (
+          <div className="w-full max-w-sm aspect-[9/16] max-h-screen mx-auto">
+            <iframe
+              src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+              className="w-full h-full rounded-lg"
+              allow="autoplay; encrypted-media; fullscreen"
+              allowFullScreen
+              frameBorder="0"
+            />
+          </div>
+        ) : videoUrl ? (
           <video
             ref={videoRef}
             src={videoUrl}
@@ -72,8 +82,8 @@ const EpisodePlayer = () => {
         )}
       </div>
 
-      {/* Bottom controls overlay */}
-      {!showEndScreen && (
+      {/* Bottom controls overlay (hidden for YouTube) */}
+      {!showEndScreen && !youtubeId && (
         <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/70 to-transparent px-4 pb-6 pt-10 space-y-2">
           {/* Progress bar */}
           <div className="relative w-full h-1 bg-white/20 rounded-full overflow-hidden">
