@@ -1,56 +1,46 @@
 
-# Upload de Imagem para o Storage no Formulário do Fan Club
+# Upload de Imagem para o Storage — Fan Club Admin
 
 ## Situação Atual
 
-O campo de imagem no `NewPostForm` (`src/pages/admin/FanClubManager.tsx`) é um simples `<Input>` de texto para colar uma URL externa:
+O `NewPostForm` em `src/pages/admin/FanClubManager.tsx` ainda usa um `<Input type="text">` para URL externa no campo de imagem (linhas 176-183). O código anterior foi aprovado mas não foi persistido no arquivo.
 
-```tsx
-<Input
-  placeholder="https://…"
-  value={form.image_url}
-  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
-/>
-```
+## O que será alterado
 
-Isso é frágil — URLs externas podem sair do ar, e o processo de copiar/colar é trabalhoso para o admin.
+### Arquivo: `src/pages/admin/FanClubManager.tsx`
 
-## Solução
+#### 1. Remover `Input` dos imports (linha 7) — não será mais usado no formulário
 
-Substituir o campo de URL por um seletor de arquivo nativo (`<input type="file">`), com:
+#### 2. Adicionar imports de ícones (linha 17)
+Adicionar `ImageIcon` e `X` ao import de `lucide-react`.
 
-- Preview da imagem selecionada antes de publicar
-- Upload para o bucket `covers` do Supabase Storage (já público, já usado pelas capas de séries)
-- Botão de remoção da imagem selecionada
-- Indicador de progresso de upload (texto "Enviando…" no botão Publicar)
-
-O padrão de upload já existe no `SeriesForm.tsx` e será replicado com pequenas adaptações.
-
-## Alterações Técnicas
-
-### Arquivo único: `src/pages/admin/FanClubManager.tsx`
-
-**1. Estado adicional no `NewPostForm`:**
+#### 3. Refatorar a interface `PostFormData` (linha 104–109)
+Remover o campo `image_url` do estado do formulário — a URL virá do Storage após o upload, não de um campo de texto.
 
 ```typescript
-const [imageFile, setImageFile] = useState<File | null>(null);
-const [imagePreview, setImagePreview] = useState<string | null>(null);
-const [uploading, setUploading] = useState(false);
+interface PostFormData {
+  title: string;
+  body: string;
+  post_type: string;
+}
+const EMPTY_FORM: PostFormData = { title: "", body: "", post_type: "post" };
 ```
 
-**2. Handler de seleção de arquivo:**
+#### 4. Adicionar 3 novos estados ao `NewPostForm` (após linha 115)
+```typescript
+const [imageFile, setImageFile]     = useState<File | null>(null);
+const [imagePreview, setImagePreview] = useState<string | null>(null);
+const [uploading, setUploading]     = useState(false);
+```
 
+#### 5. Adicionar handler de seleção e função de upload
 ```typescript
 const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0] ?? null;
   setImageFile(file);
   setImagePreview(file ? URL.createObjectURL(file) : null);
 };
-```
 
-**3. Função de upload para o bucket `covers`:**
-
-```typescript
 const uploadImage = async (file: File): Promise<string> => {
   const ext = file.name.split(".").pop();
   const path = `fan-club/${crypto.randomUUID()}.${ext}`;
@@ -60,18 +50,16 @@ const uploadImage = async (file: File): Promise<string> => {
 };
 ```
 
-As imagens do Fan Club ficam em uma subpasta `fan-club/` dentro do bucket `covers`, separadas das capas de séries.
-
-**4. Integração na `mutationFn`:**
-
+#### 6. Atualizar a `mutationFn` para fazer upload antes do INSERT
 ```typescript
 mutationFn: async (data: PostFormData) => {
   setUploading(true);
   let image_url: string | null = null;
-  if (imageFile) {
-    image_url = await uploadImage(imageFile);
+  try {
+    if (imageFile) image_url = await uploadImage(imageFile);
+  } finally {
+    setUploading(false);
   }
-  setUploading(false);
   const { error } = await supabase.from("fan_club_posts").insert({
     author_id: user!.id,
     title: data.title.trim(),
@@ -83,8 +71,7 @@ mutationFn: async (data: PostFormData) => {
 },
 ```
 
-**5. Limpar estado após publicar:**
-
+#### 7. Limpar estados de imagem no `onSuccess`
 ```typescript
 onSuccess: () => {
   toast({ title: "Post publicado!" });
@@ -95,95 +82,37 @@ onSuccess: () => {
 },
 ```
 
-**6. UI do campo de imagem (substitui o Input de URL):**
+#### 8. Substituir o campo de URL pela UI de upload (linhas 176-183)
 
-```tsx
-<div className="col-span-2 space-y-1.5">
-  <Label>
-    Imagem <span className="text-muted-foreground font-normal">(opcional)</span>
-  </Label>
+Substituir o bloco `<div>` com `<Input placeholder="https://…">` por:
 
-  {/* Preview */}
-  {imagePreview && (
-    <div className="relative w-full">
-      <img
-        src={imagePreview}
-        alt="Preview"
-        className="w-full max-h-48 object-cover rounded-lg"
-      />
-      <button
-        type="button"
-        onClick={() => { setImageFile(null); setImagePreview(null); }}
-        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-destructive transition-colors"
-      >
-        <X className="h-3.5 w-3.5" />
-      </button>
-    </div>
-  )}
+- Quando **nenhuma imagem** selecionada: área clicável com borda tracejada e ícone `ImageIcon`
+- Quando **imagem selecionada**: preview `<img>` com altura máxima de 48 e botão `X` para remover no canto superior direito
 
-  {/* File input */}
-  {!imagePreview && (
-    <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded-lg p-4 hover:bg-accent/50 transition-colors">
-      <ImageIcon className="h-4 w-4 text-muted-foreground" />
-      <span className="text-sm text-muted-foreground">
-        Clique para selecionar uma imagem
-      </span>
-      <input
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleImageChange}
-      />
-    </label>
-  )}
-</div>
-```
-
-**7. Botão Publicar com estado de upload:**
-
+#### 9. Atualizar o botão Publicar para refletir o estado de upload
 ```tsx
 <Button disabled={!isValid || createPost.isPending || uploading} ...>
-  {uploading ? "Enviando imagem…" : createPost.isPending ? "Publicando…" : (
-    <><Plus className="h-4 w-4" />Publicar</>
-  )}
+  {uploading
+    ? "Enviando imagem…"
+    : createPost.isPending
+    ? "Publicando…"
+    : <><Plus className="h-4 w-4" />Publicar</>
+  }
 </Button>
 ```
 
-**8. Novos imports:**
+## Sobre a RLS de Storage
 
-```typescript
-import { ImageIcon, X } from "lucide-react"; // adicionar X e ImageIcon
-```
+A migration de política de INSERT para o bucket `covers` (pasta `fan-club/`) foi gerada na sessão anterior. Se o upload retornar erro de permissão ao testar, será necessário rodar a migration no SQL Editor do Supabase.
 
-## Fluxo Completo
+## Resumo das mudanças
 
-```text
-Admin seleciona arquivo  →  Preview local (URL.createObjectURL)
-                         →  Clica "Publicar"
-                         →  Upload para covers/fan-club/{uuid}.ext
-                         →  Supabase retorna URL pública
-                         →  INSERT em fan_club_posts com image_url
-                         →  Post aparece no feed do Fan Club com imagem
-```
+| Aspecto | Antes | Depois |
+|---|---|---|
+| Campo de imagem | `<Input type="text">` com URL | Seletor de arquivo nativo |
+| Preview | Nenhum | Preview local antes de publicar |
+| Upload | Não havia | `supabase.storage.from("covers").upload` |
+| Feedback | Nenhum | "Enviando imagem…" no botão |
+| Armazenamento | URL externa (pode sair do ar) | Storage interno do Supabase |
 
-## O que NÃO muda
-
-- Nenhuma migração de banco necessária — `image_url` já é `text nullable`
-- Nenhuma mudança no bucket (já público, já tem RLS de leitura pública)
-- Nenhuma mudança na página `FanClub.tsx` do usuário
-- A lógica de moderation de comentários permanece intacta
-
-## Possível Problema: RLS de upload no Storage
-
-O bucket `covers` pode ou não ter política de INSERT para admins autenticados. Verificarei se há necessidade de adicionar uma política de Storage RLS para `fan-club/*` para usuários com role `admin`. Se necessário, criarei uma migration adicionando:
-
-```sql
-CREATE POLICY "Admins can upload fan club images"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'covers'
-  AND name LIKE 'fan-club/%'
-  AND has_role(auth.uid(), 'admin'::app_role)
-);
-```
+Nenhuma migração de banco é necessária — `image_url` já é `text nullable` na tabela `fan_club_posts`.
