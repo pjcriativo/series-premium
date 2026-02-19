@@ -85,7 +85,7 @@ const SeriesCard = React.forwardRef<HTMLAnchorElement, SeriesCardProps>(
     return (
       <Link
         ref={ref}
-        to={`/series/${series.id}`}
+        to={series.first_episode_id ? `/watch/${series.first_episode_id}` : `/series/${series.id}`}
         className="group block w-full"
       >
         <div
