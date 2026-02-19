@@ -21,6 +21,7 @@ interface UserRow {
   created_at: string;
   balance: number;
   roles: string[];
+  email?: string;
 }
 
 const UserManager = () => {
@@ -32,11 +33,12 @@ const UserManager = () => {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
 
-  // New CRUD states
+  // CRUD states
   const [createDialog, setCreateDialog] = useState(false);
   const [createForm, setCreateForm] = useState({ email: "", password: "", display_name: "", role: "user" as "user" | "admin" });
-  const [editDialog, setEditDialog] = useState<{ userId: string; name: string } | null>(null);
+  const [editDialog, setEditDialog] = useState<{ userId: string; name: string; roles: string[] } | null>(null);
   const [editName, setEditName] = useState("");
+  const [editRole, setEditRole] = useState<"user" | "admin">("user");
   const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; name: string } | null>(null);
   const [detailDialog, setDetailDialog] = useState<UserRow | null>(null);
 
@@ -54,6 +56,18 @@ const UserManager = () => {
       const { data: wallets } = await supabase.from("wallets").select("user_id, balance");
       const walletMap = new Map((wallets ?? []).map((w) => [w.user_id, w.balance]));
       return profiles.map((p) => ({ ...p, balance: walletMap.get(p.id) ?? 0, roles: roles?.filter((r) => r.user_id === p.id).map((r) => r.role) ?? [] })) as UserRow[];
+    },
+  });
+
+  // Fetch emails via edge function (service role only)
+  const { data: emailMap } = useQuery({
+    queryKey: ["admin-users-emails"],
+    queryFn: async () => {
+      const { data, error } = await supabase.functions.invoke("admin-manage-user", {
+        body: { action: "list" },
+      });
+      if (error) throw error;
+      return new Map<string, string>((data.users ?? []).map((u: { id: string; email: string }) => [u.id, u.email]));
     },
   });
 
@@ -79,7 +93,16 @@ const UserManager = () => {
     enabled: !!detailDialog,
   });
 
-  const filtered = (users ?? []).filter(u => (u.display_name || "").toLowerCase().includes(search.toLowerCase()));
+  // Merge email into users list
+  const usersWithEmail: UserRow[] = (users ?? []).map((u) => ({
+    ...u,
+    email: emailMap?.get(u.id) ?? "",
+  }));
+
+  const filtered = usersWithEmail.filter(u =>
+    (u.display_name || "").toLowerCase().includes(search.toLowerCase()) ||
+    (u.email || "").toLowerCase().includes(search.toLowerCase())
+  );
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -112,6 +135,7 @@ const UserManager = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-users-emails"] });
       setCreateDialog(false);
       setCreateForm({ email: "", password: "", display_name: "", role: "user" });
       toast({ title: "Usuário criado com sucesso!" });
@@ -122,7 +146,7 @@ const UserManager = () => {
   const editUserMutation = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke("admin-manage-user", {
-        body: { action: "update", user_id: editDialog!.userId, display_name: editName },
+        body: { action: "update", user_id: editDialog!.userId, display_name: editName, role: editRole },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -145,6 +169,7 @@ const UserManager = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-users-emails"] });
       setDeleteConfirm(null);
       toast({ title: "Usuário excluído!" });
     },
@@ -154,6 +179,12 @@ const UserManager = () => {
   const handleAdjustSubmit = () => {
     if (!adjustDialog || coinAmount <= 0) return;
     adjustCoinsMutation.mutate({ userId: adjustDialog.userId, amount: adjustMode === "credit" ? coinAmount : -coinAmount });
+  };
+
+  const openEditDialog = (u: UserRow) => {
+    setEditDialog({ userId: u.id, name: u.display_name || "", roles: u.roles });
+    setEditName(u.display_name || "");
+    setEditRole(u.roles.includes("admin") ? "admin" : "user");
   };
 
   const reasonLabels: Record<string, string> = {
@@ -171,7 +202,7 @@ const UserManager = () => {
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Buscar usuários..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        <Input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
       <div className="rounded-lg border border-border">
@@ -179,6 +210,7 @@ const UserManager = () => {
           <TableHeader>
             <TableRow>
               <TableHead>Nome</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead>Moedas</TableHead>
               <TableHead>Papéis</TableHead>
               <TableHead>Criado em</TableHead>
@@ -187,15 +219,16 @@ const UserManager = () => {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : paged.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center text-muted-foreground">Nenhum usuário</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Nenhum usuário</TableCell></TableRow>
             ) : (
               paged.map((u) => (
                 <TableRow key={u.id}>
                   <TableCell className="font-medium cursor-pointer hover:underline" onClick={() => setDetailDialog(u)}>
                     {u.display_name || "Sem nome"}
                   </TableCell>
+                  <TableCell className="text-muted-foreground text-sm">{u.email || "—"}</TableCell>
                   <TableCell>{u.balance} 🪙</TableCell>
                   <TableCell><div className="flex gap-1">{u.roles.map((r) => (<Badge key={r} variant={r === "admin" ? "default" : "secondary"}>{r}</Badge>))}</div></TableCell>
                   <TableCell className="text-muted-foreground">{new Date(u.created_at).toLocaleDateString("pt-BR")}</TableCell>
@@ -204,7 +237,7 @@ const UserManager = () => {
                       <Button variant="ghost" size="icon" title="Detalhes" onClick={() => setDetailDialog(u)}>
                         <Eye className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="icon" title="Editar nome" onClick={() => { setEditDialog({ userId: u.id, name: u.display_name || "" }); setEditName(u.display_name || ""); }}>
+                      <Button variant="ghost" size="icon" title="Editar" onClick={() => openEditDialog(u)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button variant="ghost" size="icon" title="Ajustar moedas" onClick={() => { setAdjustDialog({ userId: u.id, name: u.display_name || "Usuário", balance: u.balance }); setAdjustMode("credit"); setCoinAmount(100); }}>
@@ -281,6 +314,18 @@ const UserManager = () => {
               <Label>Nome de exibição</Label>
               <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
             </div>
+            <div className="space-y-2">
+              <Label>Nível de acesso</Label>
+              <Select value={editRole} onValueChange={(v) => setEditRole(v as "user" | "admin")}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Usuário comum</SelectItem>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
             <Button className="w-full" onClick={() => editUserMutation.mutate()} disabled={editUserMutation.isPending || !editName.trim()}>
               {editUserMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Salvando...</> : "Salvar"}
             </Button>
@@ -317,6 +362,8 @@ const UserManager = () => {
                 <span className="font-mono text-xs break-all">{detailDialog.id}</span>
                 <span className="text-muted-foreground">Nome:</span>
                 <span>{detailDialog.display_name || "—"}</span>
+                <span className="text-muted-foreground">Email:</span>
+                <span>{detailDialog.email || "—"}</span>
                 <span className="text-muted-foreground">Saldo:</span>
                 <span>{detailDialog.balance} 🪙</span>
                 <span className="text-muted-foreground">Papéis:</span>
@@ -343,7 +390,7 @@ const UserManager = () => {
               )}
 
               <div className="flex gap-2 pt-2">
-                <Button size="sm" variant="outline" onClick={() => { setDetailDialog(null); setEditDialog({ userId: detailDialog.id, name: detailDialog.display_name || "" }); setEditName(detailDialog.display_name || ""); }}>
+                <Button size="sm" variant="outline" onClick={() => { setDetailDialog(null); openEditDialog(detailDialog); }}>
                   <Pencil className="mr-1 h-3 w-3" /> Editar
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => { setDetailDialog(null); setAdjustDialog({ userId: detailDialog.id, name: detailDialog.display_name || "Usuário", balance: detailDialog.balance }); }}>

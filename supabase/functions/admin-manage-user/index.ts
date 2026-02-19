@@ -96,15 +96,42 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "list") {
+      const { data: listData, error: listError } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+      if (listError) throw listError;
+      return new Response(JSON.stringify({
+        users: listData.users.map((u) => ({ id: u.id, email: u.email })),
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "update") {
       if (!user_id) throw new Error("user_id is required");
 
-      const { error } = await supabaseAdmin
-        .from("profiles")
-        .update({ display_name })
-        .eq("id", user_id);
+      if (display_name !== undefined) {
+        const { error } = await supabaseAdmin
+          .from("profiles")
+          .update({ display_name })
+          .eq("id", user_id);
+        if (error) throw error;
+      }
 
-      if (error) throw error;
+      if (role !== undefined) {
+        if (role === "admin") {
+          const { error: roleError } = await supabaseAdmin
+            .from("user_roles")
+            .upsert({ user_id, role: "admin" }, { onConflict: "user_id,role" });
+          if (roleError) throw roleError;
+        } else {
+          const { error: roleError } = await supabaseAdmin
+            .from("user_roles")
+            .delete()
+            .eq("user_id", user_id)
+            .eq("role", "admin");
+          if (roleError) throw roleError;
+        }
+      }
 
       return new Response(JSON.stringify({ success: true }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
