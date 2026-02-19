@@ -1,93 +1,56 @@
 
-# Barra de Progresso Visual no "Continue Assistindo" (Home e Perfil)
+# Melhorar o Painel Admin para Gerenciar duration_seconds
 
-## Diagnóstico
+## Situação Atual
 
-### Home (`src/pages/Index.tsx`)
-- A query `continueWatching` seleciona `last_episode_number` mas **não** `last_position_seconds` do `user_progress`
-- A query de episódios seleciona `id, series_id, episode_number` mas **não** `duration_seconds`
-- Não há dados suficientes para calcular o percentual
+- Os 3 episódios publicados já têm `duration_seconds = 60` (definida pela migração anterior)
+- O `EpisodeForm` já possui o campo "Duração (segundos)" funcional e salvo corretamente
+- O `EpisodeManager` (tabela de listagem) **não mostra** a coluna de duração — o admin não tem visibilidade rápida de quais episódios estão com duração zerada
 
-### Profile (`src/pages/Profile.tsx`)
-- A query `progressList` já busca `last_position_seconds` ✓
-- A query `continueEpisodes` seleciona `id, title, episode_number, series_id` mas **não** `duration_seconds`
-- Os dados de progresso existem mas não chegam aos cards
+## O Que Será Feito
 
-## Estratégia
+### 1. `src/pages/admin/EpisodeManager.tsx` — Adicionar coluna "Duração"
 
-O percentual assistido é calculado como:
-
-```
-percentual = (last_position_seconds / duration_seconds) * 100
-```
-
-Limitado entre 0% e 100%. Se `duration_seconds` for nulo ou 0, a barra não é exibida.
-
-## Alterações por arquivo
-
-### 1. `src/pages/Index.tsx`
-
-**Na query `continueWatching`:**
-- Adicionar `last_position_seconds` no select do `user_progress`
-- Adicionar `duration_seconds` no select dos episódios
-- Incluir `last_position_seconds` e `duration_seconds` no objeto retornado por item
-
-**No JSX dos cards:**
-- Calcular `progressPct = Math.min(100, Math.round((item.last_position_seconds / item.duration_seconds) * 100))`
-- Abaixo do `div` do card (após fechar o `relative aspect-[2/3]`), antes do `<h3>`, adicionar uma barra fina de progresso:
+Adicionar uma coluna **"Duração"** na tabela, exibindo o valor em formato legível (`MM:SS` ou em segundos), com destaque visual quando o valor for 0:
 
 ```text
-┌─────────────────────────────┐
-│  [CAPA DO EPISÓDIO]         │  ← div aspect-[2/3] existente
-│  [▶ overlay Play]           │
-│  [Ep. 3]                    │
-└─────────────────────────────┘
-████████░░░░░░░░░░░░░░░░░░░░   ← barra de progresso NOVA (h-1, rounded)
-Nome da Série                  ← h3 existente
+| Série | Ep. | Título         | Acesso | Preço | Duração | Status    | Ações |
+|-------|-----|----------------|--------|-------|---------|-----------|-------|
+| S.W.A.T | #1 | A equipe...  | Pago   | 10 🪙 | 1:00    | Publicado | ✎ 🗑  |
+| S.W.A.T | #19| As famílias...| Pago  | 10 🪙 | 0:00 ⚠ | Publicado | ✎ 🗑  |
 ```
 
-A barra fica **fora e abaixo** do div da capa, acima do título, com altura de `h-1` (`4px`), bordas arredondadas, cor primária no preenchimento e fundo em `bg-muted`.
+- Se `duration_seconds === 0` ou nulo: exibir badge vermelho `"Indefinida"` como alerta visual
+- Se `duration_seconds > 0`: exibir em formato `MM:SS` (ex: `1:00` para 60 segundos, `10:30` para 630 segundos)
 
-### 2. `src/pages/Profile.tsx`
+### 2. `src/pages/admin/EpisodeForm.tsx` — Melhorar o campo de duração
 
-**Na query `continueEpisodes`:**
-- Adicionar `duration_seconds` no select
+O campo "Duração (segundos)" existe, mas é pouco intuitivo:
 
-**Criar um mapa de progresso** a partir do `progressList` existente:
+- Adicionar um preview ao lado do input mostrando a conversão em `MM:SS` em tempo real (ex: digita `630` → mostra `10:30`)
+- Adicionar texto de ajuda: `"Dica: 60 = 1 minuto · 600 = 10 minutos · 3600 = 1 hora"`
+
+## Formato de Exibição
+
+Função utilitária inline para formatar segundos:
+
 ```typescript
-const progressMap = new Map(
-  progressList?.map((p) => [p.series_id, p.last_position_seconds]) ?? []
-);
+const formatDuration = (secs: number) => {
+  if (!secs || secs <= 0) return null;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
 ```
 
-**No JSX dos cards da seção "Continuar Assistindo":**
-- Calcular `progressPct` usando `progressMap.get(ep.series_id)` e `ep.duration_seconds`
-- Adicionar a mesma barra de progresso abaixo do div da capa, acima do título
+## Arquivos Alterados
 
-## Componente da barra
-
-Sem criar novo componente — inline simples reutilizável em ambas as páginas:
-
-```tsx
-{progressPct > 0 && (
-  <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-1 mb-1">
-    <div
-      className="h-full bg-primary rounded-full transition-all"
-      style={{ width: `${progressPct}%` }}
-    />
-  </div>
-)}
-```
-
-## Arquivos alterados
-
-| Arquivo | Mudanças |
+| Arquivo | Mudança |
 |---|---|
-| `src/pages/Index.tsx` | +`last_position_seconds` no select do `user_progress`; +`duration_seconds` no select dos episódios; barra de progresso no JSX dos cards |
-| `src/pages/Profile.tsx` | +`duration_seconds` no select de `continueEpisodes`; mapa de progresso; barra de progresso no JSX dos cards |
+| `src/pages/admin/EpisodeManager.tsx` | Nova coluna "Duração" com formatação `MM:SS` e badge de alerta quando zerada |
+| `src/pages/admin/EpisodeForm.tsx` | Preview `MM:SS` ao lado do input e texto de ajuda contextual |
 
-## O que NÃO será alterado
-- Nenhuma migração de banco de dados
-- Nenhuma Edge Function
-- Nenhum componente externo
-- A lógica de navegação dos cards permanece idêntica
+## O Que NÃO Será Alterado
+- Nenhuma migração de banco
+- Lógica de save/update permanece idêntica
+- Nenhum outro componente é afetado
