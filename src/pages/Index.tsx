@@ -170,7 +170,7 @@ const Index = () => {
     <div className="min-h-screen bg-background flex flex-col">
       <Navbar />
 
-      <main className="flex-1 pb-20 pt-[182px]">
+      <main className="flex-1 pb-20">
         {isLoading ? (
           <div className="space-y-6 p-4">
             <Skeleton className="w-full aspect-[16/7] md:aspect-[16/6] rounded-xl" />
