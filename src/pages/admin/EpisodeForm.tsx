@@ -7,9 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Check, ChevronsUpDown } from "lucide-react";
 
 const formatDuration = (secs: number) => {
   if (!secs || secs <= 0) return null;
@@ -48,6 +49,7 @@ const EpisodeForm = () => {
   const { toast } = useToast();
 
   const [form, setForm] = useState<EpisodeFormData>(emptyForm);
+  const [seriesOpen, setSeriesOpen] = useState(false);
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -171,12 +173,44 @@ const EpisodeForm = () => {
       <form onSubmit={handleSubmit} className="max-w-2xl space-y-6">
         <div className="space-y-2">
           <Label>Série</Label>
-          <Select value={form.series_id} onValueChange={(v) => setForm({ ...form, series_id: v })}>
-            <SelectTrigger><SelectValue placeholder="Selecione uma série" /></SelectTrigger>
-            <SelectContent>
-              {seriesList?.map((s) => (<SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>))}
-            </SelectContent>
-          </Select>
+          <Popover open={seriesOpen} onOpenChange={setSeriesOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                role="combobox"
+                aria-expanded={seriesOpen}
+                className="w-full justify-between font-normal"
+              >
+                {form.series_id
+                  ? seriesList?.find((s) => s.id === form.series_id)?.title
+                  : "Selecione uma série"}
+                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-full p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Buscar série..." />
+                <CommandList>
+                  <CommandEmpty>Nenhuma série encontrada.</CommandEmpty>
+                  <CommandGroup>
+                    {seriesList?.map((s) => (
+                      <CommandItem
+                        key={s.id}
+                        value={s.title}
+                        onSelect={() => {
+                          setForm({ ...form, series_id: s.id });
+                          setSeriesOpen(false);
+                        }}
+                      >
+                        <Check className={`mr-2 h-4 w-4 ${form.series_id === s.id ? "opacity-100" : "opacity-0"}`} />
+                        {s.title}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
