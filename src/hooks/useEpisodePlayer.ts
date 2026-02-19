@@ -13,6 +13,7 @@ export const useEpisodePlayer = () => {
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement>(null);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const ytPlayerRef = useRef<any>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
@@ -236,7 +237,7 @@ export const useEpisodePlayer = () => {
 
   // (Restore position is now handled via onLoadedMetadata in EpisodePlayer to avoid race conditions)
 
-  // Auto-save every 5s
+  // Auto-save every 5s (native video)
   useEffect(() => {
     if (isPlaying) {
       saveTimerRef.current = setInterval(() => {
@@ -245,6 +246,25 @@ export const useEpisodePlayer = () => {
     }
     return () => { if (saveTimerRef.current) clearInterval(saveTimerRef.current); };
   }, [isPlaying, saveProgress]);
+
+  // Auto-save every 5s for YouTube episodes
+  useEffect(() => {
+    if (!youtubeId || !user) return;
+    const id = setInterval(() => {
+      if (ytPlayerRef.current) {
+        const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+        if (t > 0) saveProgress(t);
+      }
+    }, 5000);
+    return () => {
+      clearInterval(id);
+      // Save on unmount
+      if (ytPlayerRef.current) {
+        const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+        if (t > 0) saveProgress(t);
+      }
+    };
+  }, [youtubeId, user, saveProgress]);
 
   // Save on unmount
   useEffect(() => {
@@ -318,6 +338,10 @@ export const useEpisodePlayer = () => {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
+  const onYTPlayerReady = (player: any) => {
+    ytPlayerRef.current = player;
+  };
+
   return {
     episode, epLoading, accessLoading, hasAccess,
     savedProgress,
@@ -333,5 +357,6 @@ export const useEpisodePlayer = () => {
     togglePlay, toggleMute, handleTimeUpdate, handleEnded,
     handleReplay, handleNext, handleSeek, formatTime,
     navigate, queryClient,
+    onYTPlayerReady,
   };
 };
