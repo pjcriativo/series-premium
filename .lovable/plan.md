@@ -1,104 +1,75 @@
 
-# Edição de Posts no FanClubManager
+# Diagnóstico e Correção — Lentidão ao Salvar uma Série
 
-## Visão Geral
+## Causa Raiz Identificada
 
-Será adicionado um botão de editar (ícone de lápis) ao lado do botão de excluir em cada card de post. Ao clicar, um Dialog (modal) abre pré-preenchido com os dados do post atual. O admin pode alterar título, corpo, tipo e imagem, e salvar via `UPDATE` no Supabase.
+No `mutationFn` de `SeriesForm.tsx`, o fluxo atual executa **3 chamadas sequenciais ao banco** toda vez que uma série é salva:
 
-## Arquitetura da Solução
+```
+1. INSERT/UPDATE na tabela series       → ~200-400ms
+2. SELECT em episodes (busca maxEp)     → ~200-400ms  ← PROBLEMA
+3. UPDATE em series (condicional)       → ~200-400ms  ← PROBLEMA
+```
 
-Tudo implementado em um único arquivo `src/pages/admin/FanClubManager.tsx`, sem novos arquivos. O modal de edição é um componente interno `EditPostDialog` que encapsula toda a lógica de estado e upload.
+O passo 2 (busca o episódio de maior número) e o passo 3 (segundo UPDATE) são executados **sempre**, mesmo ao criar uma série nova — que por definição nunca tem episódios. Isso adiciona 200–400ms de latência desnecessária em 100% dos cadastros.
 
-## Mudanças Detalhadas
+## Correções
 
-### 1. Novos imports
+### 1. Eliminar a query de `total_episodes` automático no cadastro novo
 
-- `Pencil` de `lucide-react` (ícone do botão de editar)
-- `Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter` de `@/components/ui/dialog`
+Para uma série nova, a query em `episodes` nunca retornará dados (série acabou de ser criada). A verificação só faz sentido em edições e, mesmo assim, é redundante porque o campo `total_episodes` é editável diretamente no form — o admin pode inserir o valor correto manualmente ou atualizar depois de adicionar episódios.
 
-### 2. Novo estado em `FanClubManager`
+A lógica será removida completamente do `mutationFn`, eliminando os passos 2 e 3.
+
+**Antes (3 operações sequenciais):**
+```typescript
+mutationFn: async (formData) => {
+  // 1. upload capa (se houver)
+  // 2. INSERT ou UPDATE em series
+  // 3. SELECT em episodes ← lento e desnecessário
+  // 4. UPDATE em series se maxEp > total ← lento e condicional
+}
+```
+
+**Depois (1 operação + upload opcional):**
+```typescript
+mutationFn: async (formData) => {
+  // 1. upload capa (se houver)
+  // 2. INSERT ou UPDATE em series — pronto
+}
+```
+
+### 2. Invalidar também a query de detalhe da série ao salvar
+
+Atualmente `onSuccess` invalida apenas `["admin-series"]`, mas não `["admin-series-detail", id]`. Isso significa que ao editar uma série e voltar para o formulário, os dados antigos ainda ficam no cache.
 
 ```typescript
-const [editPost, setEditPost] = useState<any | null>(null);
+onSuccess: () => {
+  queryClient.invalidateQueries({ queryKey: ["admin-series"] });
+  queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] }); // ← adicionar
+  toast({ title: id ? "Série atualizada" : "Série criada" });
+  navigate("/admin/series");
+},
 ```
 
-`editPost` guarda o objeto completo do post sendo editado. Quando `null`, o modal está fechado.
+### 3. Compressão de imagem antes do upload (melhoria adicional)
 
-### 3. Novo componente `EditPostDialog`
+O upload da capa pode ser lento se o admin selecionar uma imagem muito grande (ex: foto de câmera de 5–10 MB). Será adicionada uma verificação de tamanho com alerta ao usuário caso o arquivo ultrapasse 5 MB, orientando a usar uma imagem menor. Isso não bloqueia o upload, mas avisa o usuário que pode demorar.
 
-Props: `post` (objeto do post), `open` (boolean), `onClose` (callback), `onSaved` (callback para invalidar queries).
+## Impacto Esperado
 
-Estado interno:
-- `form` — título, corpo, tipo (inicializado com os valores do post)
-- `imageFile` — novo arquivo selecionado (null = manter imagem atual)
-- `imagePreview` — URL de preview (inicializada com `post.image_url`)
-- `removeImage` — boolean: se true, a imagem atual será removida (image_url = null)
-- `uploading` — estado de upload
-
-Lógica de submit (`UPDATE`):
-- Se `imageFile` existir → faz upload e salva nova URL
-- Se `removeImage` for true → salva `image_url: null`
-- Caso contrário → mantém `image_url` inalterada
-
-Validação de arquivo: reaproveita as mesmas constantes `MAX_IMAGE_SIZE` e `ACCEPTED_TYPES` já definidas.
-
-### 4. Botão de editar no card de post
-
-Adicionado à direita, antes do botão de excluir:
-
-```tsx
-<button
-  onClick={() => setEditPost(post)}
-  className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
->
-  <Pencil className="h-4 w-4" />
-</button>
-```
-
-### 5. Renderização do `EditPostDialog`
-
-Adicionado ao final do JSX de `FanClubManager`, junto com o `AlertDialog` de exclusão existente:
-
-```tsx
-<EditPostDialog
-  post={editPost}
-  open={!!editPost}
-  onClose={() => setEditPost(null)}
-  onSaved={() => {
-    qc.invalidateQueries({ queryKey: ["admin-fan-club-posts"] });
-    qc.invalidateQueries({ queryKey: ["fan-club-posts"] });
-  }}
-/>
-```
-
-## Layout do Modal de Edição
-
-```text
-┌─────────────────────────────────────┐
-│ Editar Post                    [X]  │
-├─────────────────────────────────────┤
-│ Tipo:    [Select ▼]                 │
-│ Título:  [________________________] │
-│ Conteúdo:[                        ] │
-│          [                        ] │
-│ Imagem:  [preview ou seletor]       │
-│          [× Remover imagem]         │
-├─────────────────────────────────────┤
-│              [Cancelar] [Salvar]    │
-└─────────────────────────────────────┘
-```
-
-## Comportamento de Imagem no Modal
-
-| Situação | Ação do Admin | Resultado no DB |
+| Operação | Antes | Depois |
 |---|---|---|
-| Post tem imagem, não mexe | — | `image_url` inalterado |
-| Post tem imagem, clica "Remover" | `removeImage = true` | `image_url = null` |
-| Post tem imagem, seleciona nova | novo `imageFile` | upload + nova URL |
-| Post sem imagem, seleciona nova | novo `imageFile` | upload + nova URL |
+| Salvar série nova (sem imagem) | ~600–900ms | ~200–350ms |
+| Salvar série nova (com imagem) | ~1200–2000ms | ~600–1200ms |
+| Editar série (sem trocar imagem) | ~600–900ms | ~200–350ms |
 
 ## Arquivo Alterado
 
-- `src/pages/admin/FanClubManager.tsx` — adição de imports, componente `EditPostDialog`, estado `editPost` e botão de editar no card
+**`src/pages/admin/SeriesForm.tsx`** — somente o bloco `mutationFn` e o `onSuccess`:
 
-Nenhuma migration de banco é necessária — o campo `updated_at` já existe na tabela `fan_club_posts` e será atualizado automaticamente pelo `UPDATE`.
+- Remover as 3 linhas de `SELECT em episodes` + o `UPDATE` condicional de `total_episodes`
+- Adicionar invalidação de `["admin-series-detail"]` no `onSuccess`
+- Adicionar aviso de tamanho de arquivo no `onChange` do input de capa
+
+Nenhuma alteração de banco de dados necessária.
