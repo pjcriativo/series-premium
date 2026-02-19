@@ -1,75 +1,78 @@
 
-# Diagnóstico e Correção — Lentidão ao Salvar uma Série
+# Correção — Série Recém-Cadastrada Não Aparece no Formulário de Episódio
 
-## Causa Raiz Identificada
+## Diagnóstico Completo
 
-No `mutationFn` de `SeriesForm.tsx`, o fluxo atual executa **3 chamadas sequenciais ao banco** toda vez que uma série é salva:
+### Problema Principal: Cache não invalidado
 
-```
-1. INSERT/UPDATE na tabela series       → ~200-400ms
-2. SELECT em episodes (busca maxEp)     → ~200-400ms  ← PROBLEMA
-3. UPDATE em series (condicional)       → ~200-400ms  ← PROBLEMA
-```
+Quando o admin cadastra uma nova série em `SeriesForm.tsx`, o `onSuccess` invalida:
+- `["admin-series"]` — query do gerenciador de séries
+- `["admin-series-detail"]` — query de detalhe de uma série
 
-O passo 2 (busca o episódio de maior número) e o passo 3 (segundo UPDATE) são executados **sempre**, mesmo ao criar uma série nova — que por definição nunca tem episódios. Isso adiciona 200–400ms de latência desnecessária em 100% dos cadastros.
+Mas **não invalida** `["admin-series-list"]`, que é a query usada pelo `EpisodeForm` e `EpisodeManager` para popular o select de séries. O React Query mantém esses dados em cache e não refaz a busca — por isso a série nova não aparece na lista.
 
-## Correções
+### Problema Secundário: staleTime padrão
 
-### 1. Eliminar a query de `total_episodes` automático no cadastro novo
+Sem configuração de `staleTime`, o React Query considera os dados "fresh" por 0ms — porém, como a query não foi invalidada, o cache antigo permanece sem disparar novo fetch até que o componente seja desmontado e remontado.
 
-Para uma série nova, a query em `episodes` nunca retornará dados (série acabou de ser criada). A verificação só faz sentido em edições e, mesmo assim, é redundante porque o campo `total_episodes` é editável diretamente no form — o admin pode inserir o valor correto manualmente ou atualizar depois de adicionar episódios.
+## Mudanças
 
-A lógica será removida completamente do `mutationFn`, eliminando os passos 2 e 3.
+### 1. `src/pages/admin/SeriesForm.tsx` — invalidar `admin-series-list` no `onSuccess`
 
-**Antes (3 operações sequenciais):**
-```typescript
-mutationFn: async (formData) => {
-  // 1. upload capa (se houver)
-  // 2. INSERT ou UPDATE em series
-  // 3. SELECT em episodes ← lento e desnecessário
-  // 4. UPDATE em series se maxEp > total ← lento e condicional
-}
-```
-
-**Depois (1 operação + upload opcional):**
-```typescript
-mutationFn: async (formData) => {
-  // 1. upload capa (se houver)
-  // 2. INSERT ou UPDATE em series — pronto
-}
-```
-
-### 2. Invalidar também a query de detalhe da série ao salvar
-
-Atualmente `onSuccess` invalida apenas `["admin-series"]`, mas não `["admin-series-detail", id]`. Isso significa que ao editar uma série e voltar para o formulário, os dados antigos ainda ficam no cache.
+Adicionar uma linha no `onSuccess` da `saveMutation`:
 
 ```typescript
 onSuccess: () => {
   queryClient.invalidateQueries({ queryKey: ["admin-series"] });
-  queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] }); // ← adicionar
+  queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] });
+  queryClient.invalidateQueries({ queryKey: ["admin-series-list"] }); // ← NOVA LINHA
   toast({ title: id ? "Série atualizada" : "Série criada" });
   navigate("/admin/series");
 },
 ```
 
-### 3. Compressão de imagem antes do upload (melhoria adicional)
+### 2. `src/pages/admin/EpisodeForm.tsx` — adicionar `staleTime: 0` e `refetchOnMount: "always"` na query de séries
 
-O upload da capa pode ser lento se o admin selecionar uma imagem muito grande (ex: foto de câmera de 5–10 MB). Será adicionada uma verificação de tamanho com alerta ao usuário caso o arquivo ultrapasse 5 MB, orientando a usar uma imagem menor. Isso não bloqueia o upload, mas avisa o usuário que pode demorar.
+Garantir que toda vez que o formulário de episódio é aberto, a lista de séries é sempre buscada do servidor:
 
-## Impacto Esperado
+```typescript
+const { data: seriesList } = useQuery({
+  queryKey: ["admin-series-list"],
+  queryFn: async () => {
+    const { data, error } = await supabase.from("series").select("id, title").order("title");
+    if (error) throw error;
+    return data;
+  },
+  staleTime: 0,           // ← dados sempre considerados desatualizados
+  refetchOnMount: "always", // ← revalida sempre que o componente monta
+});
+```
 
-| Operação | Antes | Depois |
+### 3. `src/pages/admin/EpisodeManager.tsx` — mesma correção na query de séries
+
+A mesma query `admin-series-list` existe no gerenciador de episódios para popular o filtro por série:
+
+```typescript
+const { data: seriesList } = useQuery({
+  queryKey: ["admin-series-list"],
+  queryFn: async () => { ... },
+  staleTime: 0,
+  refetchOnMount: "always",
+});
+```
+
+## Por Que Três Mudanças?
+
+| Arquivo | Mudança | Motivo |
 |---|---|---|
-| Salvar série nova (sem imagem) | ~600–900ms | ~200–350ms |
-| Salvar série nova (com imagem) | ~1200–2000ms | ~600–1200ms |
-| Editar série (sem trocar imagem) | ~600–900ms | ~200–350ms |
+| `SeriesForm.tsx` | Invalidar `admin-series-list` | A fonte do dado: quando uma série é salva, todos os consumidores da lista devem ser notificados |
+| `EpisodeForm.tsx` | `staleTime: 0` + `refetchOnMount` | Defesa secundária: garante que ao abrir o form, a lista sempre reflete o estado atual do banco |
+| `EpisodeManager.tsx` | `staleTime: 0` + `refetchOnMount` | Mesma defesa para o filtro de séries no gerenciador de episódios |
 
-## Arquivo Alterado
+## Arquivo Alterados
 
-**`src/pages/admin/SeriesForm.tsx`** — somente o bloco `mutationFn` e o `onSuccess`:
-
-- Remover as 3 linhas de `SELECT em episodes` + o `UPDATE` condicional de `total_episodes`
-- Adicionar invalidação de `["admin-series-detail"]` no `onSuccess`
-- Adicionar aviso de tamanho de arquivo no `onChange` do input de capa
+- `src/pages/admin/SeriesForm.tsx` — 1 linha adicionada no `onSuccess`
+- `src/pages/admin/EpisodeForm.tsx` — 2 propriedades adicionadas na query `admin-series-list`
+- `src/pages/admin/EpisodeManager.tsx` — 2 propriedades adicionadas na query `admin-series-list`
 
 Nenhuma alteração de banco de dados necessária.
