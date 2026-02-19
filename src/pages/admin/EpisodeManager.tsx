@@ -13,6 +13,13 @@ import { Plus, Pencil, Trash2, Search } from "lucide-react";
 
 const PAGE_SIZE = 10;
 
+const formatDuration = (secs: number | null) => {
+  if (!secs || secs <= 0) return null;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
+
 const EpisodeManager = () => {
   const [selectedSeries, setSelectedSeries] = useState<string>("all");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -73,7 +80,7 @@ const EpisodeManager = () => {
 
       <div className="rounded-lg border border-border">
         <Table>
-          <TableHeader><TableRow><TableHead>Série</TableHead><TableHead>Episódio</TableHead><TableHead>Título</TableHead><TableHead>Acesso</TableHead><TableHead>Preço</TableHead><TableHead>Status</TableHead><TableHead className="w-24">Ações</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>Série</TableHead><TableHead>Episódio</TableHead><TableHead>Título</TableHead><TableHead>Acesso</TableHead><TableHead>Preço</TableHead><TableHead>Duração</TableHead><TableHead>Status</TableHead><TableHead className="w-24">Ações</TableHead></TableRow></TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
@@ -85,9 +92,14 @@ const EpisodeManager = () => {
                   <TableCell className="text-muted-foreground">{ep.series?.title}</TableCell>
                   <TableCell>#{ep.episode_number}</TableCell>
                   <TableCell className="font-medium">{ep.title}</TableCell>
-                  <TableCell><Badge variant={ep.is_free ? "default" : "secondary"}>{ep.is_free ? "Grátis" : "Pago"}</Badge></TableCell>
-                  <TableCell>{ep.price_coins} 🪙</TableCell>
-                  <TableCell><Badge variant={ep.is_published ? "default" : "outline"}>{ep.is_published ? "Publicado" : "Rascunho"}</Badge></TableCell>
+                   <TableCell><Badge variant={ep.is_free ? "default" : "secondary"}>{ep.is_free ? "Grátis" : "Pago"}</Badge></TableCell>
+                   <TableCell>{ep.price_coins} 🪙</TableCell>
+                   <TableCell>
+                     {formatDuration(ep.duration_seconds)
+                       ? <span className="font-mono text-sm">{formatDuration(ep.duration_seconds)}</span>
+                       : <Badge variant="destructive" className="text-xs">Indefinida</Badge>}
+                   </TableCell>
+                   <TableCell><Badge variant={ep.is_published ? "default" : "outline"}>{ep.is_published ? "Publicado" : "Rascunho"}</Badge></TableCell>
                   <TableCell>
                     <div className="flex gap-1">
                       <Link to={`/admin/episodes/${ep.id}/edit`}>

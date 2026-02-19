@@ -11,6 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft } from "lucide-react";
 
+const formatDuration = (secs: number) => {
+  if (!secs || secs <= 0) return null;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+};
+
 interface EpisodeFormData {
   series_id: string;
   title: string;
@@ -188,7 +195,13 @@ const EpisodeForm = () => {
           </div>
           <div className="space-y-2">
             <Label>Duração (segundos)</Label>
-            <Input type="number" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: parseInt(e.target.value) || 0 })} />
+            <div className="flex items-center gap-3">
+              <Input type="number" value={form.duration_seconds} onChange={(e) => setForm({ ...form, duration_seconds: parseInt(e.target.value) || 0 })} />
+              {formatDuration(form.duration_seconds) && (
+                <span className="font-mono text-sm text-muted-foreground whitespace-nowrap">{formatDuration(form.duration_seconds)}</span>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Dica: 60 = 1 minuto · 600 = 10 minutos · 3600 = 1 hora</p>
           </div>
         </div>
 
