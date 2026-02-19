@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, ChevronLeft, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 const EpisodePlayer = () => {
   const {
-    episode, epLoading, accessLoading, hasAccess,
+    episode, epLoading, accessLoading,
     savedProgress,
     videoRef, videoUrl, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
@@ -28,17 +28,62 @@ const EpisodePlayer = () => {
     togglePlay, toggleMute, handleTimeUpdate, handleEnded,
     handleReplay, handleNext, handleSeek, formatTime,
     navigate, queryClient,
+    onYTPlayerReady,
   } = useEpisodePlayer();
 
   const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
 
   const [paywallEpisode, setPaywallEpisode] = useState<{ id: string; title: string; episode_number: number; price_coins: number } | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const ytContainerRef = useRef<HTMLDivElement>(null);
 
   const navigateWithTransition = useCallback((path: string) => {
     setIsTransitioning(true);
     setTimeout(() => navigate(path), 200);
   }, [navigate]);
+
+  // YouTube IFrame API setup
+  useEffect(() => {
+    if (!youtubeId) return;
+
+    const initPlayer = () => {
+      if (!ytContainerRef.current) return;
+      // Avoid double-init if the div was already replaced by the API
+      if (ytContainerRef.current.querySelector("iframe")) return;
+      new (window as any).YT.Player(ytContainerRef.current, {
+        videoId: youtubeId,
+        playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+        events: {
+          onReady: (e: any) => {
+            onYTPlayerReady(e.target);
+            if (
+              savedProgress &&
+              savedProgress.last_position_seconds > 0 &&
+              savedProgress.last_episode_number === episode?.episode_number
+            ) {
+              e.target.seekTo(savedProgress.last_position_seconds, true);
+            }
+          },
+        },
+      });
+    };
+
+    if ((window as any).YT && (window as any).YT.Player) {
+      initPlayer();
+    } else {
+      const prev = (window as any).onYouTubeIframeAPIReady;
+      (window as any).onYouTubeIframeAPIReady = () => {
+        if (prev) prev();
+        initPlayer();
+      };
+      if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [youtubeId]);
 
   const isLoading = epLoading || accessLoading;
 
@@ -100,12 +145,9 @@ const EpisodePlayer = () => {
                 Todos os episódios
               </Link>
               {youtubeId ? (
-                <iframe
-                  src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+                <div
+                  ref={ytContainerRef}
                   className="w-full h-full"
-                  allow="autoplay; encrypted-media; fullscreen"
-                  allowFullScreen
-                  frameBorder="0"
                 />
               ) : videoUrl ? (
                 <>
