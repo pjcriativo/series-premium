@@ -1,63 +1,37 @@
 
-# Rebranding Completo: ReelShort → Epsodiox
+# Gerar nova imagem Open Graph (og-image.png) para o Epsodiox
 
-## O que será feito
+## Verificacao concluida
 
-Substituição total do nome "ReelShort" pelo novo nome "Epsodiox" em todos os arquivos do projeto, adição da logo enviada pelo usuário e criação de um favicon com ícone de play.
+Todos os elementos de branding estao funcionando corretamente:
+- Home: logo na navbar ok
+- Login: logo no painel esquerdo ok
+- Brand: logo na navbar, email contato@epsodiox.com ok
+- Favicon: favicon.png com ícone de play ok
 
----
+## O que sera feito
 
-## Arquivos a modificar
+Gerar uma nova imagem de Open Graph (1200x630px) com a identidade visual do Epsodiox para substituir o `public/og-image.png` atual.
 
-### 1. `index.html` — Metadados e favicon
-- `<title>ReelShort</title>` → `<title>Epsodiox</title>`
-- `meta name="author"` → `Epsodiox`
-- `og:title` → `Epsodiox`
-- `twitter:site` → `@Epsodiox`
-- `<link rel="icon">` → apontar para o novo `/favicon.png` (ícone de play gerado)
+## Design da imagem OG
 
-### 2. `src/components/Navbar.tsx` — Logo no menu principal
-- Substituir o texto `ReelShort` pela logo da imagem enviada (`epsodiox-logo.png`)
-- A logo ficará como `<img>` com altura fixa (`h-8` ou similar), clicável para a Home
+A imagem sera gerada com IA (Gemini) contendo:
+- Fundo escuro cinematografico (degradê dark roxo/preto)
+- Logo do Epsodiox centralizada (ícone de play + texto)
+- Tagline: "Series curtas e envolventes para maratonar a qualquer momento"
+- Elementos visuais: luzes de cinema, reel de filme sutil, atmosfera premium
+- Dimensoes: 1200 x 630px (padrao OG / Twitter Card)
 
-### 3. `src/pages/Auth.tsx` — Branding na tela de login
-- Substituir as 2 ocorrências do texto `ReelShort` pela logo
-- No painel desktop (esquerdo): logo grande centralizada
-- No header mobile: logo menor
+## Arquivo modificado
 
-### 4. `src/pages/Brand.tsx` — Email de contato
-- `contato@reelshort.com` → `contato@epsodiox.com`
+- `public/og-image.png` — substituido pela nova imagem gerada
 
-### 5. Geração do favicon (ícone de play)
-- Copiar a logo enviada (`user-uploads://logo-BHHylVbj.png`) para:
-  - `public/favicon.png` (favicon)
-  - `src/assets/epsodiox-logo.png` (para uso nos componentes React)
+## Como sera usado
 
----
-
-## Detalhes técnicos
-
-```text
-Fluxo de assets:
-  user-uploads://logo-BHHylVbj.png
-    -> COPY -> public/favicon.png  (favicon do browser, tag do <head>)
-    -> COPY -> src/assets/epsodiox-logo.png  (importada nos componentes)
-
-Componentes que exibem a logo:
-  Navbar.tsx       -> <img src={logo} className="h-8 w-auto" alt="Epsodiox" />
-  Auth.tsx (desk)  -> <img src={logo} className="h-16 w-auto" alt="Epsodiox" />
-  Auth.tsx (mob)   -> <img src={logo} className="h-10 w-auto" alt="Epsodiox" />
+O `index.html` ja referencia `/og-image.png` nas meta tags:
+```html
+<meta property="og:image" content="/og-image.png" />
+<meta name="twitter:image" content="/og-image.png" />
 ```
 
-### Ocorrências de "ReelShort" a substituir:
-
-| Arquivo | Tipo de mudança |
-|---|---|
-| `index.html` | title, meta author, og:title, twitter:site |
-| `src/components/Navbar.tsx` | texto → logo image |
-| `src/pages/Auth.tsx` | 2x texto → logo image |
-| `src/pages/Brand.tsx` | email de contato |
-
-### O que NÃO muda:
-- Rotas, hooks, lógica de negócio — nenhum nome técnico interno contém "ReelShort"
-- README.md — é arquivo de documentação interna, não impacta o usuário final
+Nenhuma alteracao no HTML e necessaria, apenas substituir o arquivo.
