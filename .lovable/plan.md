@@ -1,88 +1,95 @@
 
-# Três melhorias de UX: Retomar no segundo exato, Fade-in na Série e Play no Card
+# O que falta para o Login com Google funcionar
 
-## 1. Retomar vídeo no segundo exato (useEpisodePlayer.ts + EpisodePlayer.tsx)
+## Diagnóstico: O código está pronto
 
-### Problema atual
-O hook já tenta restaurar a posição (linha 237-243 de `useEpisodePlayer.ts`), mas há uma condição de corrida: o `useEffect` roda quando `savedProgress` ou `videoUrl` mudam, porém nesse momento `videoRef.current` pode existir enquanto o vídeo ainda não carregou seus metadados — fazendo o `currentTime` ser ignorado pelo browser (ele reseta para 0 quando o vídeo carrega).
+O app já tem tudo implementado corretamente no lado do código:
+- Botão "Continuar com Google" na tela de Auth
+- Função `signInWithGoogle()` no hook `useAuth.tsx` usando `supabase.auth.signInWithOAuth`
+- Redirecionamento correto para `window.location.origin` após o login
 
-### Solução
-A forma correta é aplicar o seek **dentro do evento `onLoadedMetadata`** do elemento `<video>`, que dispara exatamente quando o browser já sabe a duração e aceita `currentTime`. Isso garante 100% de confiabilidade.
+O problema está exclusivamente em **configurações externas** que precisam ser feitas manualmente no Google Cloud Console e no Supabase Dashboard. Não há mudança de código necessária.
 
-**Mudança em `src/hooks/useEpisodePlayer.ts`**:
-- Remover o `useEffect` de "Restore position" que usa `savedProgress + videoUrl`
-- Exportar `savedProgress` do hook para que o componente possa usá-lo no handler de `onLoadedMetadata`
+---
 
-**Mudança em `src/pages/EpisodePlayer.tsx`**:
-- No `<video>`, atualizar o handler `onLoadedMetadata`:
-```tsx
-onLoadedMetadata={() => {
-  const dur = videoRef.current?.duration ?? 0;
-  setDuration(dur);
-  // Restaurar posição exata se existe progresso salvo para este episódio
-  if (
-    savedProgress &&
-    savedProgress.last_position_seconds > 0 &&
-    savedProgress.last_episode_number === episode?.episode_number &&
-    videoRef.current
-  ) {
-    videoRef.current.currentTime = savedProgress.last_position_seconds;
-  }
-}}
+## O que precisa ser feito (tudo fora do código)
+
+### Passo 1 — Criar credenciais OAuth no Google Cloud Console
+
+1. Acesse [console.cloud.google.com](https://console.cloud.google.com)
+2. Crie um projeto (ou use um existente)
+3. Vá em **APIs & Services → OAuth consent screen**
+   - Defina o app como "External"
+   - Preencha nome do app, email de suporte
+   - Em **Authorized domains**, adicione: `pnuydoujbrpfhohsxndz.supabase.co`
+   - Scopes necessários: `email`, `profile`, `openid`
+4. Vá em **APIs & Services → Credentials → Create Credentials → OAuth Client ID**
+   - Application type: **Web application**
+   - Em **Authorized JavaScript origins**, adicione:
+     - `https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app` (preview)
+     - Seu domínio de produção (quando tiver)
+   - Em **Authorized redirect URIs**, adicione a URL de callback do Supabase:
+     - `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
+5. Anote o **Client ID** e o **Client Secret** gerados
+
+---
+
+### Passo 2 — Ativar o provedor Google no Supabase Dashboard
+
+1. Acesse o painel do Supabase → **Authentication → Providers**
+2. Encontre **Google** e ative o toggle
+3. Cole o **Client ID** e **Client Secret** obtidos no passo anterior
+4. Salve
+
+---
+
+### Passo 3 — Configurar URLs no Supabase
+
+1. No Supabase Dashboard → **Authentication → URL Configuration**
+2. Em **Site URL**, coloque a URL do seu site principal:
+   - `https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app`
+3. Em **Redirect URLs (allow list)**, adicione:
+   - `https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app`
+   - `https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app/**`
+   - Seu domínio de produção (quando tiver)
+
+---
+
+## Resumo visual do fluxo
+
+```text
+[Usuário clica "Continuar com Google"]
+              ↓
+  signInWithGoogle() no useAuth.tsx
+  (código já pronto ✓)
+              ↓
+  Supabase redireciona para o Google
+  (precisa: Google OAuth configurado ✓ passo 1)
+              ↓
+  Usuário faz login no Google
+              ↓
+  Google redireciona para:
+  https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
+  (precisa: Redirect URI no Google Cloud ✓ passo 1)
+              ↓
+  Supabase processa e redireciona para:
+  window.location.origin (o app)
+  (precisa: Site URL configurada ✓ passo 3)
+              ↓
+  onAuthStateChange dispara no app
+  Usuário logado ✓ (código já pronto ✓)
 ```
 
 ---
 
-## 2. Fade-in na página de detalhes da série (SeriesDetail.tsx)
+## O que este plano NÃO muda no código
 
-### Problema atual
-`SeriesDetail.tsx` tem `<main className="pt-14">` sem nenhuma animação de entrada. As animações `animate-fade-in` e `animate-fade-out` já existem no `tailwind.config.ts` (adicionadas anteriormente).
+Nenhuma linha de código precisa ser alterada. Todo o trabalho é de configuração manual em dois painéis externos:
 
-### Solução
-Adicionar `animate-fade-in` no `<main>` da página de detalhes da série. Como essa página não tem navegação interna entre páginas (não precisa de fade-out), apenas o fade-in de entrada é suficiente:
-
-```tsx
-// Antes:
-<main className="pt-14">
-
-// Depois:
-<main className="pt-14 animate-fade-in">
-```
-
----
-
-## 3. Ícone de Play visível no card "Continue Assistindo" (Index.tsx)
-
-### Problema atual
-O card tem apenas um badge "Ep. X" no canto inferior esquerdo. Não há nenhuma indicação visual de que o clique vai reproduzir um episódio diretamente.
-
-### Solução
-Adicionar um botão circular com ícone `Play` centralizado sobre a imagem, com transição opacity (invisível por padrão, visível no hover no desktop; sempre visível no mobile via opacidade reduzida):
-
-```tsx
-{/* Overlay com ícone de Play — sempre visível (mobile) e destaque no hover (desktop) */}
-<div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-60 group-hover:opacity-100 transition-opacity duration-200">
-  <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 border border-white/30">
-    <Play className="h-6 w-6 text-white fill-white" />
-  </div>
-</div>
-```
-
-O `group-hover` já funciona porque o `<Link>` pai já tem `className="group ..."`.
-
----
-
-## Resumo das mudanças
-
-| Arquivo | Alteração |
+| Onde | O que fazer |
 |---|---|
-| `src/hooks/useEpisodePlayer.ts` | Remover `useEffect` de restore; exportar `savedProgress` |
-| `src/pages/EpisodePlayer.tsx` | Handler `onLoadedMetadata` aplica seek com `savedProgress`; adicionar `savedProgress` nos desestruturados do hook |
-| `src/pages/SeriesDetail.tsx` | `<main>` recebe `animate-fade-in` |
-| `src/pages/Index.tsx` | Card "Continue Assistindo" recebe overlay com ícone `Play` e import de `Play` do lucide-react |
+| Google Cloud Console | Criar OAuth Client ID + Secret, configurar domínios e redirect URI |
+| Supabase Dashboard → Auth → Providers | Ativar Google e colar Client ID + Secret |
+| Supabase Dashboard → Auth → URL Configuration | Configurar Site URL e lista de redirecionamentos permitidos |
 
-## O que NÃO será alterado
-- Lógica de salvamento de progresso (salva a cada 5s e no unmount)
-- Animações de transição entre episódios no player
-- Layout do card, carrossel, ou qualquer outra seção da home
-- Lógica de acesso, paywall, ou unlocks
+Após esses 3 passos, o login com Google funcionará sem nenhuma alteração de código.
