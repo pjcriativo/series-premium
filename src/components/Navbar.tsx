@@ -32,16 +32,16 @@ const Navbar = () => {
             <img src={logo} alt="Epsodiox" className="h-[150px] w-auto" />
           </Link>
           <div className="hidden md:flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-1.5 text-base font-medium text-primary hover:text-primary/80 transition-colors">
+            <Link to="/" className="flex items-center gap-1.5 text-base font-medium text-white hover:text-white/80 transition-colors">
               Início
             </Link>
-            <Link to="/search" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
+            <Link to="/search" className="flex items-center gap-1.5 text-base font-medium text-white/80 hover:text-white transition-colors">
               Categorias
             </Link>
-            <Link to="/fan-club" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
+            <Link to="/fan-club" className="flex items-center gap-1.5 text-base font-medium text-white/80 hover:text-white transition-colors">
               Fã-Clube
             </Link>
-            <Link to="/brand" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
+            <Link to="/brand" className="flex items-center gap-1.5 text-base font-medium text-white/80 hover:text-white transition-colors">
               Marca
             </Link>
           </div>
