@@ -1,0 +1,1 @@
+UPDATE episodes SET duration_seconds = 60 WHERE is_published = true AND duration_seconds = 0;
