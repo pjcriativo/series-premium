@@ -24,6 +24,8 @@
 10. [Como Rodar Localmente](#-como-rodar-localmente)
 11. [Variáveis de Ambiente](#-variáveis-de-ambiente)
 12. [Scripts Disponíveis](#-scripts-disponíveis)
+13. [Estrutura de Arquivos](#-estrutura-de-arquivos)
+14. [Segurança](#-segurança)
 
 ---
 
@@ -183,15 +185,15 @@ profiles ──── user_roles
     ├── wallets
     │       └── transactions
     │
-    └── user_progress ──── series
+    └── user_progress ──── series ──── categories
                                │
-                         ┌─────┴─────┐
-                     episodes     banners
+                         ┌─────┴──────────┐
+                     episodes           banners
                          │
-              ┌──────────┼──────────┐
-        episode_unlocks  │  series_unlocks
-                    episode_likes
-                    episode_favorites
+              ┌──────────┼──────────────────┐
+       episode_unlocks   │            series_unlocks
+                  episode_likes
+                  episode_favorites
                          │
                         views
 ```
@@ -299,7 +301,8 @@ Recebe e processa eventos do Stripe.
 
 **Configuração necessária:**
 - Secret `STRIPE_WEBHOOK_SECRET` nas variáveis da Edge Function
-- Webhook no Stripe Dashboard apontando para: `https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/stripe-webhook`
+- Webhook no Stripe Dashboard apontando para:
+  `https://pnuydoujbrpfhohsxndz.supabase.co/functions/v1/stripe-webhook`
 
 ---
 
@@ -360,7 +363,7 @@ Utilitário para geração ou processamento de imagens de capa de séries.
 | `useRequireAuth` | `hooks/useAuth.tsx` | Redireciona para `/auth` se não autenticado |
 | `useEpisodePlayer` | `hooks/useEpisodePlayer.ts` | Estado do player: progresso, unlock, auto-unlock, next ep |
 | `useEpisodeSocial` | `hooks/useEpisodeSocial.ts` | Likes, favoritos, compartilhamento |
-| `useMobile` | `hooks/use-mobile.tsx` | Detecta viewport mobile (`< 768px`) |
+| `useMobile` | `hooks/use-mobile.tsx` | Detecta viewport mobile (< 768px) |
 
 ### Serviços
 
@@ -390,13 +393,14 @@ Utilitário para geração ou processamento de imagens de capa de séries.
 | `SeriesCard` | Card de série com capa, título e indicador de progresso |
 | `ReelCard` | Card de episódio no feed de Reels |
 | `PaywallModal` | Modal de desbloqueio com opções ep./série |
+| `ErrorBoundary` | Captura erros de renderização em produção |
 
 ### Proteção de Rotas
 
 | Componente | Lógica |
 |---|---|
 | `ProtectedRoute` | Aguarda `loading`, redireciona para `/auth` se sem `user` |
-| `AdminRoute` | Aguarda `loading` e `adminChecked`, redireciona por papel |
+| `AdminRoute` | Aguarda `loading` e `adminChecked`, redireciona por papel; timeout de 10s |
 
 ---
 
@@ -499,7 +503,7 @@ Para conectar um domínio no Lovable:
 
 ---
 
-### 4. Supabase Storage (Buckets necessários)
+### 4. Supabase Storage — Buckets Necessários
 
 | Bucket | Uso |
 |---|---|
@@ -578,54 +582,67 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 
 ```
 src/
-├── assets/              # Imagens e recursos estáticos
-├── components/          # Componentes reutilizáveis
-│   ├── ui/              # Componentes shadcn/ui (Radix)
+├── assets/                   # Imagens e recursos estáticos
+├── components/               # Componentes reutilizáveis
+│   ├── ui/                   # Componentes shadcn/ui (Radix)
 │   ├── AdminBreadcrumb.tsx
-│   ├── AdminRoute.tsx   # Guard de rota admin
-│   ├── BottomNav.tsx    # Navegação mobile inferior
-│   ├── CategoryRow.tsx  # Linha de categoria com carrossel
-│   ├── HeroBanner.tsx   # Card do banner hero
-│   ├── HeroSlider.tsx   # Slider de banners
+│   ├── AdminRoute.tsx        # Guard de rota admin
+│   ├── BottomNav.tsx         # Navegação mobile inferior
+│   ├── CategoryRow.tsx       # Linha de categoria com carrossel
+│   ├── ErrorBoundary.tsx     # Captura de erros em produção
+│   ├── HeroBanner.tsx        # Card do banner hero
+│   ├── HeroSlider.tsx        # Slider de banners
 │   ├── HorizontalCarousel.tsx
 │   ├── Navbar.tsx
-│   ├── PaywallModal.tsx # Modal de desbloqueio
+│   ├── PaywallModal.tsx      # Modal de desbloqueio
 │   ├── ProtectedRoute.tsx
 │   ├── ReelCard.tsx
 │   └── SeriesCard.tsx
 ├── hooks/
-│   ├── useAuth.tsx      # Contexto de autenticação global
+│   ├── useAuth.tsx           # Contexto de autenticação global
 │   ├── useEpisodePlayer.ts
 │   └── useEpisodeSocial.ts
 ├── integrations/
 │   └── supabase/
-│       ├── client.ts    # Cliente Supabase configurado
-│       └── types.ts     # Tipos gerados automaticamente
+│       ├── client.ts         # Cliente Supabase configurado
+│       └── types.ts          # Tipos gerados automaticamente
 ├── lib/
-│   ├── unlockService.ts # Serviço de desbloqueio de conteúdo
+│   ├── unlockService.ts      # Serviço de desbloqueio de conteúdo
 │   └── utils.ts
 ├── pages/
-│   ├── admin/           # Páginas do painel administrativo
+│   ├── admin/                # Páginas do painel administrativo
+│   │   ├── AdminLayout.tsx
+│   │   ├── BannerManager.tsx
+│   │   ├── CategoryManager.tsx
+│   │   ├── CoinPackageManager.tsx
+│   │   ├── Dashboard.tsx
+│   │   ├── EpisodeForm.tsx
+│   │   ├── EpisodeManager.tsx
+│   │   ├── SeriesForm.tsx
+│   │   ├── SeriesManager.tsx
+│   │   └── UserManager.tsx
 │   ├── Auth.tsx
+│   ├── Brand.tsx
 │   ├── CoinStore.tsx
 │   ├── EpisodePlayer.tsx
 │   ├── FanClub.tsx
-│   ├── Index.tsx        # Home
+│   ├── Index.tsx             # Home
+│   ├── NotFound.tsx
 │   ├── Profile.tsx
 │   ├── Purchases.tsx
 │   ├── ReelsFeed.tsx
 │   ├── Search.tsx
 │   └── SeriesDetail.tsx
-└── App.tsx              # Roteamento principal
+└── App.tsx                   # Roteamento principal
 
 supabase/
-├── functions/           # Edge Functions (Deno)
+├── functions/                # Edge Functions (Deno)
 │   ├── admin-manage-user/
 │   ├── buy-coins/
 │   ├── generate-covers/
 │   ├── stripe-webhook/
 │   └── unlock-episode/
-└── migrations/          # Histórico de migrações SQL
+└── migrations/               # Histórico de migrações SQL
 ```
 
 ---
