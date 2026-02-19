@@ -1,56 +1,111 @@
 
-# Melhorar o Painel Admin para Gerenciar duration_seconds
+# Root Cause: Progress Tracking Does Not Work for YouTube Episodes
 
-## Situação Atual
+## Diagnosis
 
-- Os 3 episódios publicados já têm `duration_seconds = 60` (definida pela migração anterior)
-- O `EpisodeForm` já possui o campo "Duração (segundos)" funcional e salvo corretamente
-- O `EpisodeManager` (tabela de listagem) **não mostra** a coluna de duração — o admin não tem visibilidade rápida de quais episódios estão com duração zerada
+All 3 published episodes use `youtube_url` (YouTube iframe embed), **not** `video_url` (MP4 file). The current player code only saves progress for native `<video>` elements:
 
-## O Que Será Feito
+- `saveProgress()` is called by `onTimeUpdate`, the auto-save timer (`setInterval`), and `onUnmount` — all of which are wired to `videoRef.current` (the `<video>` tag).
+- When `youtubeId` is present, the player renders an `<iframe>`. The `videoRef` is never attached, so **none of the save-progress calls ever fire**.
+- Because `user_progress` is never written, the "Continue Assistindo" section never appears and no progress bar is shown.
 
-### 1. `src/pages/admin/EpisodeManager.tsx` — Adicionar coluna "Duração"
+## Fix: YouTube IFrame API Progress Tracking
 
-Adicionar uma coluna **"Duração"** na tabela, exibindo o valor em formato legível (`MM:SS` ou em segundos), com destaque visual quando o valor for 0:
+The YouTube IFrame Player API allows injecting a JS player via `postMessage` and listening to time updates via the `onStateChange` / `getCurrentTime()` API. The plan is to add a YouTube player wrapper that:
 
-```text
-| Série | Ep. | Título         | Acesso | Preço | Duração | Status    | Ações |
-|-------|-----|----------------|--------|-------|---------|-----------|-------|
-| S.W.A.T | #1 | A equipe...  | Pago   | 10 🪙 | 1:00    | Publicado | ✎ 🗑  |
-| S.W.A.T | #19| As famílias...| Pago  | 10 🪙 | 0:00 ⚠ | Publicado | ✎ 🗑  |
-```
+1. Loads the YouTube IFrame API script once.
+2. Creates a `YT.Player` instance pointed at the episode's `youtubeId`.
+3. Polls `player.getCurrentTime()` every 5 seconds (same cadence as the native player) and calls `saveProgress`.
+4. On unmount, saves the last known position.
 
-- Se `duration_seconds === 0` ou nulo: exibir badge vermelho `"Indefinida"` como alerta visual
-- Se `duration_seconds > 0`: exibir em formato `MM:SS` (ex: `1:00` para 60 segundos, `10:30` para 630 segundos)
+### Files to Change
 
-### 2. `src/pages/admin/EpisodeForm.tsx` — Melhorar o campo de duração
+| File | Change |
+|---|---|
+| `src/hooks/useEpisodePlayer.ts` | Add `youtubeCurrentTime` ref + `saveProgress` integration for YouTube via a polling interval when `youtubeId` is present |
+| `src/pages/EpisodePlayer.tsx` | Replace plain `<iframe>` with a `<div id>` target so the YT IFrame API can attach; set up `onReady` / `onStateChange` callbacks |
 
-O campo "Duração (segundos)" existe, mas é pouco intuitivo:
+### Technical Approach
 
-- Adicionar um preview ao lado do input mostrando a conversão em `MM:SS` em tempo real (ex: digita `630` → mostra `10:30`)
-- Adicionar texto de ajuda: `"Dica: 60 = 1 minuto · 600 = 10 minutos · 3600 = 1 hora"`
+**1. `useEpisodePlayer.ts` — expose a YouTube player ref and polling**
 
-## Formato de Exibição
-
-Função utilitária inline para formatar segundos:
+Add a `ytPlayerRef` (a ref to the `YT.Player` instance) and a `startYTTracking` / `stopYTTracking` pair:
 
 ```typescript
-const formatDuration = (secs: number) => {
-  if (!secs || secs <= 0) return null;
-  const m = Math.floor(secs / 60);
-  const s = secs % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
+const ytPlayerRef = useRef<any>(null);
+
+// Called from EpisodePlayer once the YT player is ready
+const onYTPlayerReady = (player: any) => {
+  ytPlayerRef.current = player;
 };
+
+// Auto-save interval for YouTube (mirrors native video logic)
+useEffect(() => {
+  if (!youtubeId || !user) return;
+  const id = setInterval(() => {
+    if (ytPlayerRef.current) {
+      const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+      if (t > 0) saveProgress(t);
+    }
+  }, 5000);
+  return () => {
+    clearInterval(id);
+    // save on unmount
+    if (ytPlayerRef.current) {
+      const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
+      if (t > 0) saveProgress(t);
+    }
+  };
+}, [youtubeId, user, saveProgress]);
 ```
 
-## Arquivos Alterados
+**2. `EpisodePlayer.tsx` — replace `<iframe>` with YT IFrame API player**
 
-| Arquivo | Mudança |
-|---|---|
-| `src/pages/admin/EpisodeManager.tsx` | Nova coluna "Duração" com formatação `MM:SS` e badge de alerta quando zerada |
-| `src/pages/admin/EpisodeForm.tsx` | Preview `MM:SS` ao lado do input e texto de ajuda contextual |
+Replace the static `<iframe>` embed with a `<div id="yt-player-container">` and load the YT API:
 
-## O Que NÃO Será Alterado
-- Nenhuma migração de banco
-- Lógica de save/update permanece idêntica
-- Nenhum outro componente é afetado
+```typescript
+// One-time load of the YouTube IFrame API script
+useEffect(() => {
+  if (!youtubeId) return;
+  if ((window as any).YT) {
+    initPlayer();
+    return;
+  }
+  const tag = document.createElement("script");
+  tag.src = "https://www.youtube.com/iframe_api";
+  document.head.appendChild(tag);
+  (window as any).onYouTubeIframeAPIReady = initPlayer;
+}, [youtubeId]);
+
+function initPlayer() {
+  new (window as any).YT.Player("yt-player-container", {
+    videoId: youtubeId,
+    playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+    events: {
+      onReady: (e: any) => {
+        onYTPlayerReady(e.target);
+        // Restore progress if available
+        if (savedProgress?.last_position_seconds > 0 &&
+            savedProgress.last_episode_number === episode?.episode_number) {
+          e.target.seekTo(savedProgress.last_position_seconds, true);
+        }
+      },
+    },
+  });
+}
+```
+
+The `<div id="yt-player-container">` replaces the `<iframe>` and fills the same container space. The YT API converts it into an `<iframe>` automatically.
+
+### What This Enables
+
+- `saveProgress` is called every 5 seconds for YouTube episodes, same as MP4 episodes.
+- On unmount (navigating away), the last position is saved.
+- The "Continue Assistindo" section on the Home page will now appear after watching a YouTube episode.
+- The progress bar will display correctly using `last_position_seconds / duration_seconds` (60s as set in the DB).
+
+### What Is NOT Changed
+- The `saveProgress` function itself — no changes needed there.
+- All MP4 native video logic — unchanged.
+- Database schema — no migrations needed.
+- All other pages and components.
