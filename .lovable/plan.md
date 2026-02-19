@@ -1,70 +1,74 @@
 
-# Corrigir Sobreposição da Navbar sobre o Vídeo no Player
+# Três melhorias de UX: Retomar no segundo exato, Fade-in na Série e Play no Card
 
-## Diagnóstico do problema
+## 1. Retomar vídeo no segundo exato (useEpisodePlayer.ts + EpisodePlayer.tsx)
 
-A Navbar possui uma logo com `h-[150px]` (150px de altura), o que torna a barra de navegação muito mais alta do que os `pt-16` (64px) aplicados no `<main>` do player. O resultado é que a navbar flutua sobre o vídeo em vez de ficar acima dele.
+### Problema atual
+O hook já tenta restaurar a posição (linha 237-243 de `useEpisodePlayer.ts`), mas há uma condição de corrida: o `useEffect` roda quando `savedProgress` ou `videoUrl` mudam, porém nesse momento `videoRef.current` pode existir enquanto o vídeo ainda não carregou seus metadados — fazendo o `currentTime` ser ignorado pelo browser (ele reseta para 0 quando o vídeo carrega).
 
-Há dois pontos a corrigir:
+### Solução
+A forma correta é aplicar o seek **dentro do evento `onLoadedMetadata`** do elemento `<video>`, que dispara exatamente quando o browser já sabe a duração e aceita `currentTime`. Isso garante 100% de confiabilidade.
 
-1. **Navbar muito alta** — A logo de 150px é desproporcional para uma barra de navegação fixa. Reduzir para um tamanho adequado (~40-48px) em todas as páginas.
-2. **Padding-top insuficiente no player** — O `pt-16` (64px) não acompanha a altura real da navbar.
+**Mudança em `src/hooks/useEpisodePlayer.ts`**:
+- Remover o `useEffect` de "Restore position" que usa `savedProgress + videoUrl`
+- Exportar `savedProgress` do hook para que o componente possa usá-lo no handler de `onLoadedMetadata`
+
+**Mudança em `src/pages/EpisodePlayer.tsx`**:
+- No `<video>`, atualizar o handler `onLoadedMetadata`:
+```tsx
+onLoadedMetadata={() => {
+  const dur = videoRef.current?.duration ?? 0;
+  setDuration(dur);
+  // Restaurar posição exata se existe progresso salvo para este episódio
+  if (
+    savedProgress &&
+    savedProgress.last_position_seconds > 0 &&
+    savedProgress.last_episode_number === episode?.episode_number &&
+    videoRef.current
+  ) {
+    videoRef.current.currentTime = savedProgress.last_position_seconds;
+  }
+}}
+```
 
 ---
 
-## Estratégia: Corrigir a altura da logo na Navbar
+## 2. Fade-in na página de detalhes da série (SeriesDetail.tsx)
 
-A abordagem mais limpa e que beneficia todo o app é **reduzir a logo para um tamanho adequado** na Navbar, mantendo a barra proporcional. Uma navbar padrão tem entre 56–72px de altura total. Isso resolve o problema para todas as páginas ao mesmo tempo.
+### Problema atual
+`SeriesDetail.tsx` tem `<main className="pt-14">` sem nenhuma animação de entrada. As animações `animate-fade-in` e `animate-fade-out` já existem no `tailwind.config.ts` (adicionadas anteriormente).
 
-### Mudança 1 — `src/components/Navbar.tsx`
-
-Alterar a classe da logo de `h-[150px]` para `h-10` (40px), que é proporcional para navbars:
+### Solução
+Adicionar `animate-fade-in` no `<main>` da página de detalhes da série. Como essa página não tem navegação interna entre páginas (não precisa de fade-out), apenas o fade-in de entrada é suficiente:
 
 ```tsx
 // Antes:
-<img src={logo} alt="Epsodiox" className="h-[150px] w-auto" />
+<main className="pt-14">
 
 // Depois:
-<img src={logo} alt="Epsodiox" className="h-10 w-auto" />
-```
-
-Isso faz a navbar ficar com ~64-72px de altura total (logo 40px + padding vertical `py-4` = 16px × 2 = 64px total), que é a altura padrão compatível com `pt-16`.
-
-### Mudança 2 — Ajustar padding do player para garantia extra
-
-Como segurança adicional, no `EpisodePlayer.tsx` atualizar o padding-top do `<main>` e do skeleton de carregamento para `pt-20` ao invés de `pt-16`, garantindo uma margem confortável mesmo se a navbar mudar de tamanho no futuro:
-
-```tsx
-// Antes (linha 85):
-<main className={cn("pt-16 px-4 lg:px-8 pb-20 md:pb-8", ...)}>
-
-// Depois:
-<main className={cn("pt-20 px-4 lg:px-8 pb-20 md:pb-8", ...)}>
-
-// Também na linha 48 (estado de loading):
-<main className="pt-20 px-4 lg:px-8">
+<main className="pt-14 animate-fade-in">
 ```
 
 ---
 
-## Resultado visual esperado
+## 3. Ícone de Play visível no card "Continue Assistindo" (Index.tsx)
 
-```text
-ANTES:
-┌──────────────────────────────────────────────────┐
-│  [Logo 150px]   Início  Categorias  Fã-Clube      │  ← navbar ~182px de altura
-│                                                   │
-│    [ VÍDEO SENDO COBERTO AQUI ]                  │  ← 64px de pt não é suficiente
-└──────────────────────────────────────────────────┘
+### Problema atual
+O card tem apenas um badge "Ep. X" no canto inferior esquerdo. Não há nenhuma indicação visual de que o clique vai reproduzir um episódio diretamente.
 
-DEPOIS:
-┌──────────────────────────────────────────────────┐
-│  [Logo 40px]   Início  Categorias  Fã-Clube       │  ← navbar ~72px de altura
-└──────────────────────────────────────────────────┘
-│                                                   │
-│    [ VÍDEO VISÍVEL COMPLETAMENTE ]               │  ← pt-20 (80px) ≥ 72px navbar
-└──────────────────────────────────────────────────┘
+### Solução
+Adicionar um botão circular com ícone `Play` centralizado sobre a imagem, com transição opacity (invisível por padrão, visível no hover no desktop; sempre visível no mobile via opacidade reduzida):
+
+```tsx
+{/* Overlay com ícone de Play — sempre visível (mobile) e destaque no hover (desktop) */}
+<div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-60 group-hover:opacity-100 transition-opacity duration-200">
+  <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 border border-white/30">
+    <Play className="h-6 w-6 text-white fill-white" />
+  </div>
+</div>
 ```
+
+O `group-hover` já funciona porque o `<Link>` pai já tem `className="group ..."`.
 
 ---
 
@@ -72,11 +76,13 @@ DEPOIS:
 
 | Arquivo | Alteração |
 |---|---|
-| `src/components/Navbar.tsx` | Logo de `h-[150px]` → `h-10` |
-| `src/pages/EpisodePlayer.tsx` | Padding-top do `<main>` de `pt-16` → `pt-20` (no estado normal e no skeleton de loading) |
+| `src/hooks/useEpisodePlayer.ts` | Remover `useEffect` de restore; exportar `savedProgress` |
+| `src/pages/EpisodePlayer.tsx` | Handler `onLoadedMetadata` aplica seek com `savedProgress`; adicionar `savedProgress` nos desestruturados do hook |
+| `src/pages/SeriesDetail.tsx` | `<main>` recebe `animate-fade-in` |
+| `src/pages/Index.tsx` | Card "Continue Assistindo" recebe overlay com ícone `Play` e import de `Play` do lucide-react |
 
 ## O que NÃO será alterado
-- Nenhuma lógica de autenticação, paywall ou episódios
-- Layout de duas colunas do player
-- Animações de transição
-- Demais páginas (só a Navbar é compartilhada; o ajuste beneficia todas)
+- Lógica de salvamento de progresso (salva a cada 5s e no unmount)
+- Animações de transição entre episódios no player
+- Layout do card, carrossel, ou qualquer outra seção da home
+- Lógica de acesso, paywall, ou unlocks
