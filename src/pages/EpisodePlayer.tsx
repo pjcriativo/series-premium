@@ -46,7 +46,7 @@ const EpisodePlayer = () => {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
-        <main className="pt-20 px-4 lg:px-8">
+        <main className="pt-48 px-4 lg:px-8">
           <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
             <div className="lg:w-[55%] flex justify-center lg:justify-end">
               <Skeleton className="w-full max-w-md rounded-lg" style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }} />
@@ -83,7 +83,7 @@ const EpisodePlayer = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      <main className={cn("pt-20 px-4 lg:px-8 pb-20 md:pb-8", isTransitioning ? "animate-fade-out" : "animate-fade-in")}>
+      <main className={cn("pt-48 px-4 lg:px-8 pb-20 md:pb-8", isTransitioning ? "animate-fade-out" : "animate-fade-in")}>
         <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
           {/* Left column - Vertical Video */}
           <div className="lg:w-[55%] flex justify-center lg:justify-end">
