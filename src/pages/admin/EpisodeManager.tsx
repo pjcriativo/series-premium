@@ -28,7 +28,7 @@ const EpisodeManager = () => {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  useEffect(() => setPage(0), [search]);
+  useEffect(() => setPage(0), [search, selectedSeries]);
 
   const { data: seriesList } = useQuery({
     queryKey: ["admin-series-list"],
@@ -48,7 +48,10 @@ const EpisodeManager = () => {
     },
   });
 
-  const filtered = (episodes ?? []).filter(ep => ep.title.toLowerCase().includes(search.toLowerCase()));
+  const filtered = (episodes ?? []).filter(ep =>
+    ep.title.toLowerCase().includes(search.toLowerCase()) ||
+    (ep.series?.title ?? "").toLowerCase().includes(search.toLowerCase())
+  );
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -77,7 +80,7 @@ const EpisodeManager = () => {
 
       <div className="mb-4 relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Buscar episódios..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+        <Input placeholder="Buscar por título ou série..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
       </div>
 
       <div className="rounded-lg border border-border">
@@ -87,7 +90,15 @@ const EpisodeManager = () => {
             {isLoading ? (
               <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Carregando...</TableCell></TableRow>
             ) : paged.length === 0 ? (
-              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Nenhum episódio</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  {selectedSeries !== "all"
+                    ? "Esta série ainda não tem episódios. Clique em '+ Novo Episódio' para adicionar."
+                    : search
+                    ? "Nenhum episódio encontrado para a busca."
+                    : "Nenhum episódio cadastrado."}
+                </TableCell>
+              </TableRow>
             ) : (
               paged.map((ep: any) => (
                 <TableRow key={ep.id}>
