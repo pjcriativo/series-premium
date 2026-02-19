@@ -34,7 +34,7 @@ const UserManager = () => {
 
   // New CRUD states
   const [createDialog, setCreateDialog] = useState(false);
-  const [createForm, setCreateForm] = useState({ email: "", password: "", display_name: "" });
+  const [createForm, setCreateForm] = useState({ email: "", password: "", display_name: "", role: "user" as "user" | "admin" });
   const [editDialog, setEditDialog] = useState<{ userId: string; name: string } | null>(null);
   const [editName, setEditName] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<{ userId: string; name: string } | null>(null);
@@ -104,7 +104,7 @@ const UserManager = () => {
   const createUserMutation = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke("admin-manage-user", {
-        body: { action: "create", email: createForm.email, password: createForm.password, display_name: createForm.display_name },
+        body: { action: "create", email: createForm.email, password: createForm.password, display_name: createForm.display_name, role: createForm.role },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -113,7 +113,7 @@ const UserManager = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setCreateDialog(false);
-      setCreateForm({ email: "", password: "", display_name: "" });
+      setCreateForm({ email: "", password: "", display_name: "", role: "user" });
       toast({ title: "Usuário criado com sucesso!" });
     },
     onError: (err: any) => toast({ title: "Erro ao criar usuário", description: err.message, variant: "destructive" }),
@@ -252,6 +252,18 @@ const UserManager = () => {
             <div className="space-y-2">
               <Label>Nome de exibição</Label>
               <Input value={createForm.display_name} onChange={(e) => setCreateForm(f => ({ ...f, display_name: e.target.value }))} placeholder="Nome do usuário" />
+            </div>
+            <div className="space-y-2">
+              <Label>Nível de acesso</Label>
+              <Select value={createForm.role} onValueChange={(v) => setCreateForm(f => ({ ...f, role: v as "user" | "admin" }))}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="user">Usuário comum</SelectItem>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button className="w-full" onClick={() => createUserMutation.mutate()} disabled={createUserMutation.isPending || !createForm.email || createForm.password.length < 6}>
               {createUserMutation.isPending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Criando...</> : "Criar Usuário"}
