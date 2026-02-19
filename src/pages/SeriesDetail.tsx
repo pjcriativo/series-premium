@@ -129,7 +129,7 @@ const SeriesDetail = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pt-14 animate-fade-in">
+      <main className="pt-48 animate-fade-in">
         {isLoading ? (
           <div className="space-y-4">
             <Skeleton className="w-full aspect-video" />
