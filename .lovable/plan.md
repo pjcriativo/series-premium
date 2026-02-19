@@ -1,77 +1,122 @@
 
-# Diagnóstico e Correção — Filtro e Busca no Gerenciador de Episódios
+# Combobox com Busca de Séries no Formulário de Episódio
 
-## Causa Raiz Identificada
+## Objetivo
 
-Existem dois problemas distintos:
+Substituir o `<Select>` simples de séries no formulário de episódio por um **Combobox** — um campo que combina input de texto com lista filtrada — permitindo ao admin digitar o nome da série para localizá-la rapidamente, sem precisar rolar por uma lista longa.
 
-### Problema 1: Campo de busca não filtra por nome da série
+## Como Funciona o Combobox
 
-No `EpisodeManager.tsx`, a linha de filtro é:
+O projeto já possui os componentes `Command` e `Popover` instalados (via `cmdk` e `@radix-ui/react-popover`). O padrão Combobox do shadcn/ui combina esses dois:
 
+```
+[Botão trigger com nome da série selecionada ▼]
+    ↓ abre
+┌─────────────────────────────┐
+│ 🔍 Buscar série...          │
+├─────────────────────────────┤
+│ Amor em Chamas              │
+│ Confusões em Família        │
+│ O Livro de Enoque      ✓   │
+│ Sombras do Passado          │
+└─────────────────────────────┘
+```
+
+- Digitar filtra a lista em tempo real (client-side, já está tudo carregado)
+- Clicar em um item seleciona a série e fecha o popover
+- O botão mostra o nome da série selecionada ou "Selecione uma série"
+- Ícone de check marca a série atualmente selecionada
+
+## Mudanças Técnicas
+
+### Arquivo: `src/pages/admin/EpisodeForm.tsx`
+
+**1. Novos imports:**
 ```typescript
-const filtered = (episodes ?? []).filter(ep =>
-  ep.title.toLowerCase().includes(search.toLowerCase())
-);
+import { useState } from "react"; // já existe
+import { Check, ChevronsUpDown, ArrowLeft } from "lucide-react"; // adicionar Check e ChevronsUpDown
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 ```
 
-Ela compara o texto digitado **apenas** com `ep.title` (título do episódio). Quando o admin digita "O Livro de Enoque", está pesquisando pelo nome da **série**, mas o código só procura no título do **episódio** — por isso não encontra nada.
-
-### Problema 2: A série "O Livro de Enoque" não tem episódios cadastrados
-
-Confirmado diretamente no banco: a série existe (`id: 1b4a4899...`), mas não tem nenhum episódio vinculado. Isso é esperado — a série foi cadastrada mas os episódios ainda não foram adicionados. O problema é que não há feedback claro informando isso ao admin.
-
-### Problema 3: UX confusa — dois filtros sem diferenciação clara
-
-Existe um campo de busca por texto E um select de série. Não está claro para o usuário que:
-- O campo de texto filtra por **título de episódio**
-- O select filtra pela **série**
-
----
-
-## Correções Planejadas
-
-### 1. Ampliar o filtro de texto para incluir o nome da série
-
-Atualizar a linha de filtragem em `EpisodeManager.tsx` para também buscar no título da série vinculada ao episódio:
-
+**2. Novo estado para controlar abertura do popover:**
 ```typescript
-const filtered = (episodes ?? []).filter(ep =>
-  ep.title.toLowerCase().includes(search.toLowerCase()) ||
-  (ep.series?.title ?? "").toLowerCase().includes(search.toLowerCase())
-);
+const [seriesOpen, setSeriesOpen] = useState(false);
 ```
 
-Isso permite que o admin digite "Livro de Enoque" e veja todos os episódios daquela série.
+**3. Substituir o bloco `<Select>` pelo Combobox:**
 
-### 2. Melhorar placeholder do campo de busca
-
-Alterar o placeholder de "Buscar episódios..." para "Buscar por título ou série..." para deixar claro o que o campo aceita.
-
-### 3. Resetar página ao mudar a série selecionada no Select
-
-Atualmente `useEffect(() => setPage(0), [search])` só reseta quando o texto muda. Quando o usuário muda o Select de série, a página não é resetada — pode gerar "página 3 de 1" em casos de troca. Adicionar `selectedSeries` na dependência do effect:
-
-```typescript
-useEffect(() => setPage(0), [search, selectedSeries]);
+Antes (linhas 172–180):
+```tsx
+<div className="space-y-2">
+  <Label>Série</Label>
+  <Select value={form.series_id} onValueChange={(v) => setForm({ ...form, series_id: v })}>
+    <SelectTrigger><SelectValue placeholder="Selecione uma série" /></SelectTrigger>
+    <SelectContent>
+      {seriesList?.map((s) => (<SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>))}
+    </SelectContent>
+  </Select>
+</div>
 ```
 
-### 4. Indicação clara quando série selecionada não tem episódios
-
-Quando `selectedSeries !== "all"` e a lista retorna vazia, mostrar uma mensagem mais útil:
-
+Depois:
+```tsx
+<div className="space-y-2">
+  <Label>Série</Label>
+  <Popover open={seriesOpen} onOpenChange={setSeriesOpen}>
+    <PopoverTrigger asChild>
+      <Button
+        variant="outline"
+        role="combobox"
+        aria-expanded={seriesOpen}
+        className="w-full justify-between font-normal"
+      >
+        {form.series_id
+          ? seriesList?.find((s) => s.id === form.series_id)?.title
+          : "Selecione uma série"}
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </Button>
+    </PopoverTrigger>
+    <PopoverContent className="w-full p-0" align="start">
+      <Command>
+        <CommandInput placeholder="Buscar série..." />
+        <CommandList>
+          <CommandEmpty>Nenhuma série encontrada.</CommandEmpty>
+          <CommandGroup>
+            {seriesList?.map((s) => (
+              <CommandItem
+                key={s.id}
+                value={s.title}
+                onSelect={() => {
+                  setForm({ ...form, series_id: s.id });
+                  setSeriesOpen(false);
+                }}
+              >
+                <Check className={`mr-2 h-4 w-4 ${form.series_id === s.id ? "opacity-100" : "opacity-0"}`} />
+                {s.title}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </CommandList>
+      </Command>
+    </PopoverContent>
+  </Popover>
+</div>
 ```
-"Esta série ainda não tem episódios. Clique em '+ Novo Episódio' para adicionar."
-```
 
----
+**4. Remover imports não mais utilizados:**
+- `Select`, `SelectContent`, `SelectItem`, `SelectTrigger`, `SelectValue` podem ser removidos do import (não são usados em mais nenhum lugar no arquivo)
+
+## Por que usar `value={s.title}` no CommandItem?
+
+O `cmdk` usa a prop `value` do `CommandItem` para filtrar os itens pelo texto digitado. Usando `value={s.title}`, a busca nativa do `cmdk` já cuida da filtragem — sem precisar implementar lógica adicional de filtro. A seleção real continua usando `s.id` no `onSelect`.
 
 ## Arquivo Alterado
 
-Apenas `src/pages/admin/EpisodeManager.tsx`:
-- Filtro de texto ampliado para incluir `ep.series?.title`
-- Placeholder do campo de busca atualizado
-- `useEffect` de reset de página inclui `selectedSeries`
-- Mensagem de lista vazia contextual quando série selecionada não tem episódios
+Apenas **`src/pages/admin/EpisodeForm.tsx`**:
+- Adicionar imports: `Popover`, `PopoverContent`, `PopoverTrigger`, `Command`, `CommandEmpty`, `CommandGroup`, `CommandInput`, `CommandItem`, `CommandList`, `Check`, `ChevronsUpDown`
+- Adicionar estado `seriesOpen`
+- Substituir bloco `<Select>` pelo Combobox (Popover + Command)
+- Remover imports do `Select` que ficaram sem uso
 
 Nenhuma alteração de banco de dados necessária.
