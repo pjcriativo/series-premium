@@ -1,80 +1,74 @@
 
-# Validação de Arquivo antes do Upload — FanClubManager
+# Thumbnail de Imagem na Lista de Posts — FanClubManager
 
 ## Situação Atual
 
-O `handleImageChange` (linhas 118–122) aceita qualquer arquivo sem validação:
-- Nenhuma verificação de tipo MIME
-- Nenhuma verificação de tamanho
-- Erros de upload só aparecem depois do envio (custoso e confuso para o usuário)
+Cada card de post (linhas 342–362) renderiza:
 
-## Regras de Validação a Implementar
-
-| Regra | Detalhe |
-|---|---|
-| Tipos aceitos | `image/jpeg`, `image/png`, `image/webp` |
-| Tamanho máximo | 5 MB (5 × 1024 × 1024 bytes) |
-| Momento | Antes de qualquer upload, direto no `handleImageChange` |
-| Feedback | Toast de erro imediato + campo não preenchido |
-
-## Mudanças no Arquivo `src/pages/admin/FanClubManager.tsx`
-
-### 1. Adicionar constantes de validação (antes de `NewPostForm`, linha 111)
-
-```typescript
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
-const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+```
+[ bloco de texto (título, badge, corpo, comentários) ]  [ 🗑 botão ]
 ```
 
-### 2. Atualizar `handleImageChange` (linhas 118–122) com validação
+Posts com `image_url` não exibem nenhum indicador visual de que têm imagem.
 
-```typescript
-const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0] ?? null;
+## Mudança Proposta
 
-  // Zera o input para permitir re-selecionar o mesmo arquivo após erro
-  e.target.value = "";
+Adicionar um **thumbnail quadrado** (48×48 px) à esquerda do bloco de texto, visível apenas quando `post.image_url` existe. Posts sem imagem mantêm o layout atual.
 
-  if (!file) return;
+Layout resultante:
 
-  if (!ACCEPTED_TYPES.includes(file.type)) {
-    toast({
-      title: "Formato não suportado",
-      description: "Use JPG, PNG ou WebP.",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  if (file.size > MAX_IMAGE_SIZE) {
-    toast({
-      title: "Imagem muito grande",
-      description: `O arquivo tem ${(file.size / 1024 / 1024).toFixed(1)} MB. O limite é 5 MB.`,
-      variant: "destructive",
-    });
-    return;
-  }
-
-  setImageFile(file);
-  setImagePreview(URL.createObjectURL(file));
-};
+```
+[ 🖼 thumb 48×48 ]  [ bloco de texto (título, badge, corpo, comentários) ]  [ 🗑 botão ]
 ```
 
-### 3. Restringir o `accept` do input para os tipos exatos (linha 225)
+### Detalhes do thumbnail
+
+- Tamanho: `w-12 h-12` (48 px) com `shrink-0`
+- Forma: `rounded-lg` com `object-cover` para não distorcer
+- Fallback: se a imagem falhar ao carregar (`onError`), exibe um placeholder cinza com ícone `ImageIcon` de `lucide-react` (já importado)
+- Apenas renderizado quando `post.image_url` é truthy
+
+## Arquivo Alterado
+
+**`src/pages/admin/FanClubManager.tsx`** — somente o bloco `flex items-start gap-3` dentro do `.map()` (linhas 343–361):
 
 ```tsx
-accept="image/jpeg,image/png,image/webp"
+<div className="flex items-start gap-3">
+  {/* NOVO: thumbnail à esquerda */}
+  {post.image_url && (
+    <img
+      src={post.image_url}
+      alt=""
+      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-muted"
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+      }}
+    />
+  )}
+
+  {/* bloco de texto — sem alteração */}
+  <div className="flex-1 min-w-0">
+    ...
+  </div>
+
+  {/* botão de lixeira — sem alteração */}
+  <button ...>
+    <Trash2 className="h-4 w-4" />
+  </button>
+</div>
 ```
 
-Isso já filtra o seletor nativo do sistema operacional, reduzindo a chance de o usuário selecionar um tipo errado.
+### Por que `onError` em vez de placeholder?
 
-## Comportamento Esperado
+O `onError` esconde a tag `<img>` se a URL for inválida ou o arquivo tiver sido deletado do Storage, evitando um ícone quebrado sem precisar adicionar estado extra ao componente.
 
-- Arquivo válido (ex: foto.jpg, 2 MB) → preview aparece normalmente
-- Tipo inválido (ex: arquivo.gif, documento.pdf) → toast "Formato não suportado" e campo limpo
-- Arquivo muito grande (ex: raw.png, 10 MB) → toast "Imagem muito grande — X.X MB. O limite é 5 MB." e campo limpo
-- Após erro, o usuário pode selecionar outro arquivo imediatamente (input resetado)
+## Resumo
 
-## Arquivos Alterados
+| Aspecto | Antes | Depois |
+|---|---|---|
+| Posts com imagem | Sem indicação visual | Thumbnail 48×48 à esquerda |
+| Posts sem imagem | Layout normal | Layout normal (sem mudança) |
+| Imagem quebrada | N/A | `<img>` ocultada via `onError` |
+| Novos imports | N/A | Nenhum — `ImageIcon` já está importado |
 
-- `src/pages/admin/FanClubManager.tsx` — apenas `handleImageChange` e o atributo `accept` do `<input>`
+Nenhuma alteração de banco, migration ou query — `image_url` já é retornado pelo `select("*")` existente na linha 290.
