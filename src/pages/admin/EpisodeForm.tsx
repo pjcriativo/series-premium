@@ -150,7 +150,25 @@ const EpisodeForm = () => {
         if (error) throw error;
       }
 
+      // Buscar o maior episode_number da série e atualizar total_episodes
+      const { data: maxEpData } = await supabase
+        .from("episodes")
+        .select("episode_number")
+        .eq("series_id", form.series_id)
+        .order("episode_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (maxEpData) {
+        await supabase
+          .from("series")
+          .update({ total_episodes: maxEpData.episode_number })
+          .eq("id", form.series_id);
+      }
+
       queryClient.invalidateQueries({ queryKey: ["admin-episodes"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-series"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-series-list"] });
       toast({ title: isEdit ? "Episódio atualizado" : "Episódio criado" });
       navigate("/admin/episodes");
     } catch (err: any) {
