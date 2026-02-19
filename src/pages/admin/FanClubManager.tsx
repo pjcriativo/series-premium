@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,11 +9,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
   AlertDialog, AlertDialogAction, AlertDialogCancel,
   AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, Plus, MessageCircle, ChevronDown, ChevronUp, ImageIcon, X } from "lucide-react";
+import { Trash2, Plus, MessageCircle, ChevronDown, ChevronUp, ImageIcon, X, Pencil } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -122,21 +125,13 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
-
-    // Zera o input para permitir re-selecionar o mesmo arquivo após erro
     e.target.value = "";
-
     if (!file) return;
 
     if (!ACCEPTED_TYPES.includes(file.type)) {
-      toast({
-        title: "Formato não suportado",
-        description: "Use JPG, PNG ou WebP.",
-        variant: "destructive",
-      });
+      toast({ title: "Formato não suportado", description: "Use JPG, PNG ou WebP.", variant: "destructive" });
       return;
     }
-
     if (file.size > MAX_IMAGE_SIZE) {
       toast({
         title: "Imagem muito grande",
@@ -196,9 +191,7 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
         <div className="col-span-2 space-y-1.5">
           <Label>Tipo</Label>
           <Select value={form.post_type} onValueChange={(v) => setForm((f) => ({ ...f, post_type: v }))}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
+            <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="post">Post</SelectItem>
               <SelectItem value="behind_scenes">Bastidores</SelectItem>
@@ -229,14 +222,9 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
 
         <div className="col-span-2 space-y-1.5">
           <Label>Imagem <span className="text-muted-foreground font-normal">(opcional)</span></Label>
-
           {imagePreview ? (
             <div className="relative w-full">
-              <img
-                src={imagePreview}
-                alt="Preview"
-                className="w-full max-h-48 object-cover rounded-lg"
-              />
+              <img src={imagePreview} alt="Preview" className="w-full max-h-48 object-cover rounded-lg" />
               <button
                 type="button"
                 onClick={() => { setImageFile(null); setImagePreview(null); }}
@@ -249,30 +237,193 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
             <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded-lg p-4 hover:bg-accent/50 transition-colors">
               <ImageIcon className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Clique para selecionar uma imagem</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={handleImageChange}
-              />
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageChange} />
             </label>
           )}
         </div>
       </div>
 
-      <Button
-        disabled={!isValid || createPost.isPending || uploading}
-        onClick={() => createPost.mutate(form)}
-        className="gap-2"
-      >
-        {uploading
-          ? "Enviando imagem…"
-          : createPost.isPending
-          ? "Publicando…"
-          : <><Plus className="h-4 w-4" />Publicar</>
-        }
+      <Button disabled={!isValid || createPost.isPending || uploading} onClick={() => createPost.mutate(form)} className="gap-2">
+        {uploading ? "Enviando imagem…" : createPost.isPending ? "Publicando…" : <><Plus className="h-4 w-4" />Publicar</>}
       </Button>
     </div>
+  );
+};
+
+// ── Edit post dialog ───────────────────────────────────────────────────────────
+
+interface EditPostDialogProps {
+  post: any | null;
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+const EditPostDialog = ({ post, open, onClose, onSaved }: EditPostDialogProps) => {
+  const [form, setForm] = useState<PostFormData>(EMPTY_FORM);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // Sync form state whenever the target post changes
+  useEffect(() => {
+    if (post) {
+      setForm({ title: post.title, body: post.body, post_type: post.post_type });
+      setImagePreview(post.image_url ?? null);
+      setImageFile(null);
+      setRemoveImage(false);
+    }
+  }, [post]);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = "";
+    if (!file) return;
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      toast({ title: "Formato não suportado", description: "Use JPG, PNG ou WebP.", variant: "destructive" });
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      toast({
+        title: "Imagem muito grande",
+        description: `O arquivo tem ${(file.size / 1024 / 1024).toFixed(1)} MB. O limite é 5 MB.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    setRemoveImage(false);
+  };
+
+  const handleRemoveImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(true);
+  };
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const ext = file.name.split(".").pop();
+    const path = `fan-club/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from("covers").upload(path, file);
+    if (error) throw error;
+    return supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
+  };
+
+  const updatePost = useMutation({
+    mutationFn: async (data: PostFormData) => {
+      setUploading(true);
+      let image_url: string | null | undefined = undefined; // undefined = don't change
+
+      try {
+        if (imageFile) {
+          image_url = await uploadImage(imageFile);
+        } else if (removeImage) {
+          image_url = null;
+        }
+      } finally {
+        setUploading(false);
+      }
+
+      const payload: any = {
+        title: data.title.trim(),
+        body: data.body.trim(),
+        post_type: data.post_type,
+      };
+      if (image_url !== undefined) payload.image_url = image_url;
+
+      const { error } = await supabase.from("fan_club_posts").update(payload).eq("id", post.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "Post atualizado!" });
+      onSaved();
+      onClose();
+    },
+    onError: () => toast({ title: "Erro ao salvar", variant: "destructive" }),
+  });
+
+  const isValid = form.title.trim().length > 0 && form.body.trim().length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Editar Post</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Tipo</Label>
+            <Select value={form.post_type} onValueChange={(v) => setForm((f) => ({ ...f, post_type: v }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="post">Post</SelectItem>
+                <SelectItem value="behind_scenes">Bastidores</SelectItem>
+                <SelectItem value="bonus">Episódio Bônus</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Título</Label>
+            <input
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+              placeholder="Título do post"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Conteúdo</Label>
+            <Textarea
+              placeholder="Escreva o conteúdo do post…"
+              className="min-h-[120px]"
+              value={form.body}
+              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Imagem <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+            {imagePreview ? (
+              <div className="relative w-full">
+                <img src={imagePreview} alt="Preview" className="w-full max-h-48 object-cover rounded-lg" />
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-destructive transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+                <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Clique para selecionar uma imagem</span>
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleImageChange} />
+              </label>
+            )}
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={updatePost.isPending || uploading}>
+            Cancelar
+          </Button>
+          <Button
+            disabled={!isValid || updatePost.isPending || uploading}
+            onClick={() => updatePost.mutate(form)}
+          >
+            {uploading ? "Enviando imagem…" : updatePost.isPending ? "Salvando…" : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 
@@ -281,6 +432,7 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
 const FanClubManager = () => {
   const qc = useQueryClient();
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editPost, setEditPost] = useState<any | null>(null);
 
   const { data: posts = [], isLoading, refetch } = useQuery({
     queryKey: ["admin-fan-club-posts"],
@@ -360,18 +512,40 @@ const FanClubManager = () => {
                   <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{post.body}</p>
                   <CommentModerationPanel postId={post.id} />
                 </div>
-                <button
-                  onClick={() => setDeleteId(post.id)}
-                  className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => setEditPost(post)}
+                    className="text-muted-foreground hover:text-primary transition-colors p-1"
+                    title="Editar post"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => setDeleteId(post.id)}
+                    className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                    title="Excluir post"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))
         )}
       </div>
 
+      {/* Edit dialog */}
+      <EditPostDialog
+        post={editPost}
+        open={!!editPost}
+        onClose={() => setEditPost(null)}
+        onSaved={() => {
+          qc.invalidateQueries({ queryKey: ["admin-fan-club-posts"] });
+          qc.invalidateQueries({ queryKey: ["fan-club-posts"] });
+        }}
+      />
+
+      {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => { if (!o) setDeleteId(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
