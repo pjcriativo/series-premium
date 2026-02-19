@@ -1,122 +1,86 @@
 
-# Combobox com Busca de Séries no Formulário de Episódio
+# Atualização Automática de `total_episodes` ao Salvar Episódio
+
+## Contexto
+
+O campo `total_episodes` na tabela `series` representa quantos episódios a série possui. Atualmente ele é um campo manual no formulário de série — o admin precisa atualizar esse número manualmente toda vez que adiciona ou edita um episódio. Isso é propenso a erro e inconsistência.
 
 ## Objetivo
 
-Substituir o `<Select>` simples de séries no formulário de episódio por um **Combobox** — um campo que combina input de texto com lista filtrada — permitindo ao admin digitar o nome da série para localizá-la rapidamente, sem precisar rolar por uma lista longa.
+Após salvar (criar ou editar) um episódio com sucesso em `EpisodeForm.tsx`, buscar automaticamente no banco qual é o **maior `episode_number`** cadastrado para aquela série e atualizar o campo `total_episodes` da série com esse valor.
 
-## Como Funciona o Combobox
+## Por Que o Maior `episode_number`?
 
-O projeto já possui os componentes `Command` e `Popover` instalados (via `cmdk` e `@radix-ui/react-popover`). O padrão Combobox do shadcn/ui combina esses dois:
+Essa é a lógica já documentada na arquitetura do projeto (`business-logic/series-automation`): o `total_episodes` deve refletir o maior número de episódio cadastrado, não a contagem de linhas. Isso garante consistência mesmo se episódios forem deletados ou tiverem números não sequenciais.
 
+**Exemplo:**
+- Série tem episódios: #1, #2, #3, #5 → `total_episodes = 5`
+- Se o admin cadastrar o episódio #6 → `total_episodes` vira `6` automaticamente
+
+## Fluxo da Atualização
+
+```text
+Admin clica "Salvar" no EpisodeForm
+         ↓
+1. Verifica duplicata de episode_number
+         ↓
+2. Faz upload do vídeo (se houver)
+         ↓
+3. Salva/atualiza o episódio no banco
+         ↓
+4. [NOVO] Busca MAX(episode_number) para form.series_id
+         ↓
+5. [NOVO] Atualiza series.total_episodes com o valor encontrado
+         ↓
+6. Invalida queries e navega para /admin/episodes
 ```
-[Botão trigger com nome da série selecionada ▼]
-    ↓ abre
-┌─────────────────────────────┐
-│ 🔍 Buscar série...          │
-├─────────────────────────────┤
-│ Amor em Chamas              │
-│ Confusões em Família        │
-│ O Livro de Enoque      ✓   │
-│ Sombras do Passado          │
-└─────────────────────────────┘
-```
 
-- Digitar filtra a lista em tempo real (client-side, já está tudo carregado)
-- Clicar em um item seleciona a série e fecha o popover
-- O botão mostra o nome da série selecionada ou "Selecione uma série"
-- Ícone de check marca a série atualmente selecionada
-
-## Mudanças Técnicas
+## Mudança Técnica
 
 ### Arquivo: `src/pages/admin/EpisodeForm.tsx`
 
-**1. Novos imports:**
+Dentro do `handleSubmit`, após o `insert` ou `update` do episódio ter sucesso (linha 151), adicionar dois passos antes do `invalidateQueries`:
+
 ```typescript
-import { useState } from "react"; // já existe
-import { Check, ChevronsUpDown, ArrowLeft } from "lucide-react"; // adicionar Check e ChevronsUpDown
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+// 1. Buscar o maior episode_number da série
+const { data: maxEpData } = await supabase
+  .from("episodes")
+  .select("episode_number")
+  .eq("series_id", form.series_id)
+  .order("episode_number", { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+// 2. Atualizar total_episodes da série
+if (maxEpData) {
+  await supabase
+    .from("series")
+    .update({ total_episodes: maxEpData.episode_number })
+    .eq("id", form.series_id);
+}
 ```
 
-**2. Novo estado para controlar abertura do popover:**
+Após isso, invalidar também a query de séries para que o gerenciador de séries reflita o novo total:
+
 ```typescript
-const [seriesOpen, setSeriesOpen] = useState(false);
+queryClient.invalidateQueries({ queryKey: ["admin-episodes"] });
+queryClient.invalidateQueries({ queryKey: ["admin-series"] });        // ← NOVO
+queryClient.invalidateQueries({ queryKey: ["admin-series-list"] });   // ← NOVO
 ```
 
-**3. Substituir o bloco `<Select>` pelo Combobox:**
+## Impacto
 
-Antes (linhas 172–180):
-```tsx
-<div className="space-y-2">
-  <Label>Série</Label>
-  <Select value={form.series_id} onValueChange={(v) => setForm({ ...form, series_id: v })}>
-    <SelectTrigger><SelectValue placeholder="Selecione uma série" /></SelectTrigger>
-    <SelectContent>
-      {seriesList?.map((s) => (<SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>))}
-    </SelectContent>
-  </Select>
-</div>
-```
+| Situação | Comportamento |
+|---|---|
+| Admin cria episódio #7 em série com total=5 | `total_episodes` vira 7 automaticamente |
+| Admin edita episódio #3 (sem mudar o número) | `total_episodes` permanece correto (rebusca o max) |
+| Admin edita episódio e muda de #7 para #8 | `total_episodes` vira 8 automaticamente |
+| Série ainda sem episódios | Nenhuma atualização (guard com `if (maxEpData)`) |
 
-Depois:
-```tsx
-<div className="space-y-2">
-  <Label>Série</Label>
-  <Popover open={seriesOpen} onOpenChange={setSeriesOpen}>
-    <PopoverTrigger asChild>
-      <Button
-        variant="outline"
-        role="combobox"
-        aria-expanded={seriesOpen}
-        className="w-full justify-between font-normal"
-      >
-        {form.series_id
-          ? seriesList?.find((s) => s.id === form.series_id)?.title
-          : "Selecione uma série"}
-        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-      </Button>
-    </PopoverTrigger>
-    <PopoverContent className="w-full p-0" align="start">
-      <Command>
-        <CommandInput placeholder="Buscar série..." />
-        <CommandList>
-          <CommandEmpty>Nenhuma série encontrada.</CommandEmpty>
-          <CommandGroup>
-            {seriesList?.map((s) => (
-              <CommandItem
-                key={s.id}
-                value={s.title}
-                onSelect={() => {
-                  setForm({ ...form, series_id: s.id });
-                  setSeriesOpen(false);
-                }}
-              >
-                <Check className={`mr-2 h-4 w-4 ${form.series_id === s.id ? "opacity-100" : "opacity-0"}`} />
-                {s.title}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        </CommandList>
-      </Command>
-    </PopoverContent>
-  </Popover>
-</div>
-```
-
-**4. Remover imports não mais utilizados:**
-- `Select`, `SelectContent`, `SelectItem`, `SelectTrigger`, `SelectValue` podem ser removidos do import (não são usados em mais nenhum lugar no arquivo)
-
-## Por que usar `value={s.title}` no CommandItem?
-
-O `cmdk` usa a prop `value` do `CommandItem` para filtrar os itens pelo texto digitado. Usando `value={s.title}`, a busca nativa do `cmdk` já cuida da filtragem — sem precisar implementar lógica adicional de filtro. A seleção real continua usando `s.id` no `onSelect`.
-
-## Arquivo Alterado
+## Arquivos Alterados
 
 Apenas **`src/pages/admin/EpisodeForm.tsx`**:
-- Adicionar imports: `Popover`, `PopoverContent`, `PopoverTrigger`, `Command`, `CommandEmpty`, `CommandGroup`, `CommandInput`, `CommandItem`, `CommandList`, `Check`, `ChevronsUpDown`
-- Adicionar estado `seriesOpen`
-- Substituir bloco `<Select>` pelo Combobox (Popover + Command)
-- Remover imports do `Select` que ficaram sem uso
+- Adicionar 2 chamadas ao Supabase após salvar o episódio (busca do max e update da série)
+- Adicionar invalidação das queries `admin-series` e `admin-series-list`
 
-Nenhuma alteração de banco de dados necessária.
+Nenhuma alteração de banco de dados necessária — o campo `total_episodes` já existe na tabela `series` e admins têm permissão de UPDATE.
