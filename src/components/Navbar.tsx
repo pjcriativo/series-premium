@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Coins, ShieldCheck } from "lucide-react";
+import { Coins, ShieldCheck, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,7 +17,7 @@ const Navbar = () => {
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
-  const { user, profile, isAdmin } = useAuth();
+  const { user, profile, isAdmin, signOut } = useAuth();
 
   const { data: wallet } = useQuery({
     queryKey: ["wallet", user?.id],
@@ -125,6 +125,15 @@ const Navbar = () => {
                       </Button>
                     </Link>
                   )}
+
+                  {/* Sign out button */}
+                  <button
+                    onClick={signOut}
+                    className="mt-2 w-full flex items-center justify-center gap-1.5 h-9 text-sm font-medium text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sair
+                  </button>
                 </HoverCardContent>
               </HoverCard>
 
