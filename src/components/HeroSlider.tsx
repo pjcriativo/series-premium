@@ -83,6 +83,7 @@ const HeroSlider = React.forwardRef<HTMLDivElement, HeroSliderProps>(
             </div>
           </div>
 
+          <div className="absolute top-0 inset-x-0 h-32 md:h-40 bg-gradient-to-b from-black/50 to-transparent z-10 pointer-events-none" />
           <div className="absolute bottom-0 inset-x-0 h-28 md:h-44 bg-gradient-to-t from-background via-background/60 to-transparent z-10 pointer-events-none" />
           <div className="absolute left-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80 bg-gradient-to-r from-background via-background/50 to-transparent z-10 pointer-events-none" />
           <div className="absolute right-0 inset-y-0 w-20 md:w-40 lg:w-64 xl:w-80 bg-gradient-to-l from-background via-background/50 to-transparent z-10 pointer-events-none" />
