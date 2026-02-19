@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Film, Mail, Lock, User, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import { Mail, Lock, User, ArrowLeft, Eye, EyeOff } from "lucide-react";
+import logo from "@/assets/epsodiox-logo.png";
 
 type AuthMode = "login" | "register" | "forgot" | "reset";
 
@@ -133,12 +134,7 @@ const Auth = () => {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_right,hsl(var(--primary)/0.1),transparent_60%)]" />
 
         <Link to="/" className="relative z-10 px-12 max-w-md text-center space-y-6 block">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary shadow-lg shadow-primary/30">
-            <Film className="h-10 w-10 text-primary-foreground" />
-          </div>
-          <h2 className="text-4xl font-black text-foreground tracking-tight">
-            ReelShort
-          </h2>
+          <img src={logo} alt="Epsodiox" className="h-20 w-auto mx-auto" />
           <p className="text-muted-foreground text-lg leading-relaxed">
             Séries curtas e envolventes para maratonar a qualquer momento. Drama, romance e suspense na palma da sua mão.
           </p>
@@ -157,11 +153,8 @@ const Auth = () => {
       {/* Right panel — form */}
       <div className="flex flex-1 flex-col items-center justify-center px-4 py-8 lg:w-1/2">
         {/* Mobile branding header */}
-        <Link to="/" className="lg:hidden mb-8 text-center space-y-3 block">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary shadow-md shadow-primary/25">
-            <Film className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <h2 className="text-2xl font-black text-foreground">ReelShort</h2>
+        <Link to="/" className="lg:hidden mb-8 text-center block">
+          <img src={logo} alt="Epsodiox" className="h-12 w-auto mx-auto" />
         </Link>
 
         <Card className="w-full max-w-md border-border bg-card">
