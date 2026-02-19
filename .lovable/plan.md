@@ -1,74 +1,104 @@
 
-# Thumbnail de Imagem na Lista de Posts — FanClubManager
+# Edição de Posts no FanClubManager
 
-## Situação Atual
+## Visão Geral
 
-Cada card de post (linhas 342–362) renderiza:
+Será adicionado um botão de editar (ícone de lápis) ao lado do botão de excluir em cada card de post. Ao clicar, um Dialog (modal) abre pré-preenchido com os dados do post atual. O admin pode alterar título, corpo, tipo e imagem, e salvar via `UPDATE` no Supabase.
 
+## Arquitetura da Solução
+
+Tudo implementado em um único arquivo `src/pages/admin/FanClubManager.tsx`, sem novos arquivos. O modal de edição é um componente interno `EditPostDialog` que encapsula toda a lógica de estado e upload.
+
+## Mudanças Detalhadas
+
+### 1. Novos imports
+
+- `Pencil` de `lucide-react` (ícone do botão de editar)
+- `Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter` de `@/components/ui/dialog`
+
+### 2. Novo estado em `FanClubManager`
+
+```typescript
+const [editPost, setEditPost] = useState<any | null>(null);
 ```
-[ bloco de texto (título, badge, corpo, comentários) ]  [ 🗑 botão ]
+
+`editPost` guarda o objeto completo do post sendo editado. Quando `null`, o modal está fechado.
+
+### 3. Novo componente `EditPostDialog`
+
+Props: `post` (objeto do post), `open` (boolean), `onClose` (callback), `onSaved` (callback para invalidar queries).
+
+Estado interno:
+- `form` — título, corpo, tipo (inicializado com os valores do post)
+- `imageFile` — novo arquivo selecionado (null = manter imagem atual)
+- `imagePreview` — URL de preview (inicializada com `post.image_url`)
+- `removeImage` — boolean: se true, a imagem atual será removida (image_url = null)
+- `uploading` — estado de upload
+
+Lógica de submit (`UPDATE`):
+- Se `imageFile` existir → faz upload e salva nova URL
+- Se `removeImage` for true → salva `image_url: null`
+- Caso contrário → mantém `image_url` inalterada
+
+Validação de arquivo: reaproveita as mesmas constantes `MAX_IMAGE_SIZE` e `ACCEPTED_TYPES` já definidas.
+
+### 4. Botão de editar no card de post
+
+Adicionado à direita, antes do botão de excluir:
+
+```tsx
+<button
+  onClick={() => setEditPost(post)}
+  className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+>
+  <Pencil className="h-4 w-4" />
+</button>
 ```
 
-Posts com `image_url` não exibem nenhum indicador visual de que têm imagem.
+### 5. Renderização do `EditPostDialog`
 
-## Mudança Proposta
+Adicionado ao final do JSX de `FanClubManager`, junto com o `AlertDialog` de exclusão existente:
 
-Adicionar um **thumbnail quadrado** (48×48 px) à esquerda do bloco de texto, visível apenas quando `post.image_url` existe. Posts sem imagem mantêm o layout atual.
-
-Layout resultante:
-
+```tsx
+<EditPostDialog
+  post={editPost}
+  open={!!editPost}
+  onClose={() => setEditPost(null)}
+  onSaved={() => {
+    qc.invalidateQueries({ queryKey: ["admin-fan-club-posts"] });
+    qc.invalidateQueries({ queryKey: ["fan-club-posts"] });
+  }}
+/>
 ```
-[ 🖼 thumb 48×48 ]  [ bloco de texto (título, badge, corpo, comentários) ]  [ 🗑 botão ]
+
+## Layout do Modal de Edição
+
+```text
+┌─────────────────────────────────────┐
+│ Editar Post                    [X]  │
+├─────────────────────────────────────┤
+│ Tipo:    [Select ▼]                 │
+│ Título:  [________________________] │
+│ Conteúdo:[                        ] │
+│          [                        ] │
+│ Imagem:  [preview ou seletor]       │
+│          [× Remover imagem]         │
+├─────────────────────────────────────┤
+│              [Cancelar] [Salvar]    │
+└─────────────────────────────────────┘
 ```
 
-### Detalhes do thumbnail
+## Comportamento de Imagem no Modal
 
-- Tamanho: `w-12 h-12` (48 px) com `shrink-0`
-- Forma: `rounded-lg` com `object-cover` para não distorcer
-- Fallback: se a imagem falhar ao carregar (`onError`), exibe um placeholder cinza com ícone `ImageIcon` de `lucide-react` (já importado)
-- Apenas renderizado quando `post.image_url` é truthy
+| Situação | Ação do Admin | Resultado no DB |
+|---|---|---|
+| Post tem imagem, não mexe | — | `image_url` inalterado |
+| Post tem imagem, clica "Remover" | `removeImage = true` | `image_url = null` |
+| Post tem imagem, seleciona nova | novo `imageFile` | upload + nova URL |
+| Post sem imagem, seleciona nova | novo `imageFile` | upload + nova URL |
 
 ## Arquivo Alterado
 
-**`src/pages/admin/FanClubManager.tsx`** — somente o bloco `flex items-start gap-3` dentro do `.map()` (linhas 343–361):
+- `src/pages/admin/FanClubManager.tsx` — adição de imports, componente `EditPostDialog`, estado `editPost` e botão de editar no card
 
-```tsx
-<div className="flex items-start gap-3">
-  {/* NOVO: thumbnail à esquerda */}
-  {post.image_url && (
-    <img
-      src={post.image_url}
-      alt=""
-      className="w-12 h-12 rounded-lg object-cover shrink-0 bg-muted"
-      onError={(e) => {
-        e.currentTarget.style.display = "none";
-      }}
-    />
-  )}
-
-  {/* bloco de texto — sem alteração */}
-  <div className="flex-1 min-w-0">
-    ...
-  </div>
-
-  {/* botão de lixeira — sem alteração */}
-  <button ...>
-    <Trash2 className="h-4 w-4" />
-  </button>
-</div>
-```
-
-### Por que `onError` em vez de placeholder?
-
-O `onError` esconde a tag `<img>` se a URL for inválida ou o arquivo tiver sido deletado do Storage, evitando um ícone quebrado sem precisar adicionar estado extra ao componente.
-
-## Resumo
-
-| Aspecto | Antes | Depois |
-|---|---|---|
-| Posts com imagem | Sem indicação visual | Thumbnail 48×48 à esquerda |
-| Posts sem imagem | Layout normal | Layout normal (sem mudança) |
-| Imagem quebrada | N/A | `<img>` ocultada via `onError` |
-| Novos imports | N/A | Nenhum — `ImageIcon` já está importado |
-
-Nenhuma alteração de banco, migration ou query — `image_url` já é retornado pelo `select("*")` existente na linha 290.
+Nenhuma migration de banco é necessária — o campo `updated_at` já existe na tabela `fan_club_posts` e será atualizado automaticamente pelo `UPDATE`.
