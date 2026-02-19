@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Coins } from "lucide-react";
+import { Coins, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -9,7 +9,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import logo from "@/assets/epsodiox-logo.png";
 
 const Navbar = () => {
-  const { user, profile } = useAuth();
+  const { user, profile, isAdmin } = useAuth();
 
   const { data: wallet } = useQuery({
     queryKey: ["wallet", user?.id],
@@ -107,6 +107,16 @@ const Navbar = () => {
                       Completar
                     </Button>
                   </Link>
+
+                  {/* Admin panel link */}
+                  {isAdmin && (
+                    <Link to="/admin" className="block mt-2">
+                      <Button variant="outline" className="w-full h-9 text-sm font-bold gap-1.5">
+                        <ShieldCheck className="h-4 w-4" />
+                        Painel Admin
+                      </Button>
+                    </Link>
+                  )}
                 </HoverCardContent>
               </HoverCard>
 
