@@ -1,87 +1,93 @@
 
-# Tradução dos textos em inglês para português BR
+# Barra de Progresso Visual no "Continue Assistindo" (Home e Perfil)
 
-## Diagnóstico completo
+## Diagnóstico
 
-Após varredura em todos os arquivos `.tsx` do projeto, foram encontrados exatamente **3 textos em inglês** visíveis na interface pública. Todo o resto da aplicação já está corretamente em português BR.
+### Home (`src/pages/Index.tsx`)
+- A query `continueWatching` seleciona `last_episode_number` mas **não** `last_position_seconds` do `user_progress`
+- A query de episódios seleciona `id, series_id, episode_number` mas **não** `duration_seconds`
+- Não há dados suficientes para calcular o percentual
 
-### Textos a corrigir
+### Profile (`src/pages/Profile.tsx`)
+- A query `progressList` já busca `last_position_seconds` ✓
+- A query `continueEpisodes` seleciona `id, title, episode_number, series_id` mas **não** `duration_seconds`
+- Os dados de progresso existem mas não chegam aos cards
 
-| Arquivo | Linha | Texto atual | Tradução |
-|---|---|---|---|
-| `src/pages/EpisodePlayer.tsx` | 252 | `Plot of Episode {n}` | `Sinopse do Episódio {n}` |
-| `src/pages/EpisodePlayer.tsx` | 277 | `Share` | `Compartilhar` |
-| `src/pages/ReelsFeed.tsx` | 130 | `Share` | `Compartilhar` |
+## Estratégia
 
-Bônus (admin — tooltip do gráfico de barras):
-| Arquivo | Linha | Texto atual | Tradução |
-|---|---|---|---|
-| `src/pages/admin/Dashboard.tsx` | 140 | `"Views"` (tooltip do Recharts) | `"Visualizações"` |
-
----
-
-## Detalhes de cada alteração
-
-### 1. `src/pages/EpisodePlayer.tsx` — linha 252
-
-Título da seção de sinopse no lado direito do player:
+O percentual assistido é calculado como:
 
 ```
-// Antes:
-Plot of Episode {episode?.episode_number}
-
-// Depois:
-Sinopse do Episódio {episode?.episode_number}
+percentual = (last_position_seconds / duration_seconds) * 100
 ```
 
-### 2. `src/pages/EpisodePlayer.tsx` — linha 277
+Limitado entre 0% e 100%. Se `duration_seconds` for nulo ou 0, a barra não é exibida.
 
-Label abaixo do botão de compartilhar no player:
+## Alterações por arquivo
 
-```
-// Antes:
-<span className="text-xs">Share</span>
+### 1. `src/pages/Index.tsx`
 
-// Depois:
-<span className="text-xs">Compartilhar</span>
-```
+**Na query `continueWatching`:**
+- Adicionar `last_position_seconds` no select do `user_progress`
+- Adicionar `duration_seconds` no select dos episódios
+- Incluir `last_position_seconds` e `duration_seconds` no objeto retornado por item
 
-### 3. `src/pages/ReelsFeed.tsx` — linha 130
+**No JSX dos cards:**
+- Calcular `progressPct = Math.min(100, Math.round((item.last_position_seconds / item.duration_seconds) * 100))`
+- Abaixo do `div` do card (após fechar o `relative aspect-[2/3]`), antes do `<h3>`, adicionar uma barra fina de progresso:
 
-Label abaixo do botão de compartilhar no feed de Reels:
-
-```
-// Antes:
-<span className="text-white text-[10px]">Share</span>
-
-// Depois:
-<span className="text-white text-[10px]">Compartilhar</span>
-```
-
-### 4. `src/pages/admin/Dashboard.tsx` — linha 140 (bônus)
-
-Tooltip do gráfico de barras de views por série:
-
-```
-// Antes:
-<Tooltip formatter={(v: number) => [v, "Views"]} />
-
-// Depois:
-<Tooltip formatter={(v: number) => [v, "Visualizações"]} />
+```text
+┌─────────────────────────────┐
+│  [CAPA DO EPISÓDIO]         │  ← div aspect-[2/3] existente
+│  [▶ overlay Play]           │
+│  [Ep. 3]                    │
+└─────────────────────────────┘
+████████░░░░░░░░░░░░░░░░░░░░   ← barra de progresso NOVA (h-1, rounded)
+Nome da Série                  ← h3 existente
 ```
 
----
+A barra fica **fora e abaixo** do div da capa, acima do título, com altura de `h-1` (`4px`), bordas arredondadas, cor primária no preenchimento e fundo em `bg-muted`.
+
+### 2. `src/pages/Profile.tsx`
+
+**Na query `continueEpisodes`:**
+- Adicionar `duration_seconds` no select
+
+**Criar um mapa de progresso** a partir do `progressList` existente:
+```typescript
+const progressMap = new Map(
+  progressList?.map((p) => [p.series_id, p.last_position_seconds]) ?? []
+);
+```
+
+**No JSX dos cards da seção "Continuar Assistindo":**
+- Calcular `progressPct` usando `progressMap.get(ep.series_id)` e `ep.duration_seconds`
+- Adicionar a mesma barra de progresso abaixo do div da capa, acima do título
+
+## Componente da barra
+
+Sem criar novo componente — inline simples reutilizável em ambas as páginas:
+
+```tsx
+{progressPct > 0 && (
+  <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-1 mb-1">
+    <div
+      className="h-full bg-primary rounded-full transition-all"
+      style={{ width: `${progressPct}%` }}
+    />
+  </div>
+)}
+```
 
 ## Arquivos alterados
 
-| Arquivo | Alterações |
+| Arquivo | Mudanças |
 |---|---|
-| `src/pages/EpisodePlayer.tsx` | 2 textos traduzidos (título sinopse + label share) |
-| `src/pages/ReelsFeed.tsx` | 1 texto traduzido (label share nos Reels) |
-| `src/pages/admin/Dashboard.tsx` | 1 texto traduzido (tooltip do gráfico) |
+| `src/pages/Index.tsx` | +`last_position_seconds` no select do `user_progress`; +`duration_seconds` no select dos episódios; barra de progresso no JSX dos cards |
+| `src/pages/Profile.tsx` | +`duration_seconds` no select de `continueEpisodes`; mapa de progresso; barra de progresso no JSX dos cards |
 
 ## O que NÃO será alterado
-- Nenhum texto técnico interno (props, variáveis, comentários de código)
-- Nenhuma lógica de negócio
-- Nenhuma configuração de banco de dados
-- "G Pay", "Google Pay" e "Mercado Pago" — são nomes próprios de produtos/marcas, não devem ser traduzidos
+- Nenhuma migração de banco de dados
+- Nenhuma Edge Function
+- Nenhum componente externo
+- A lógica de navegação dos cards permanece idêntica
