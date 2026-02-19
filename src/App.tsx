@@ -27,6 +27,7 @@ import UserManager from "./pages/admin/UserManager";
 import CategoryManager from "./pages/admin/CategoryManager";
 import CoinPackageManager from "./pages/admin/CoinPackageManager";
 import BannerManager from "./pages/admin/BannerManager";
+import FanClubManager from "./pages/admin/FanClubManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -83,6 +84,7 @@ const App = () => (
               <Route path="users" element={<UserManager />} />
               <Route path="packages" element={<CoinPackageManager />} />
               <Route path="banners" element={<BannerManager />} />
+              <Route path="fan-club" element={<FanClubManager />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
