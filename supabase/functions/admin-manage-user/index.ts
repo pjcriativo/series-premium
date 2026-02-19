@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const { action, user_id, email, password, display_name } = await req.json();
+    const { action, user_id, email, password, display_name, role } = await req.json();
 
     if (action === "create") {
       if (!email || !password) {
@@ -81,6 +81,15 @@ Deno.serve(async (req) => {
       });
 
       if (error) throw error;
+
+      // If role is "admin", insert admin role in user_roles
+      // The handle_new_user trigger already inserts the "user" role automatically
+      if (role === "admin") {
+        const { error: roleError } = await supabaseAdmin
+          .from("user_roles")
+          .insert({ user_id: data.user.id, role: "admin" });
+        if (roleError) throw roleError;
+      }
 
       return new Response(JSON.stringify({ user: { id: data.user.id, email: data.user.email } }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
