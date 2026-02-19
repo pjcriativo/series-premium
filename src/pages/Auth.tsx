@@ -58,13 +58,7 @@ const Auth = () => {
       switch (mode) {
         case "login": {
           await signIn(email, password);
-          // Check admin role to redirect accordingly
-          const { data: roleData } = await supabase
-            .from("user_roles")
-            .select("role")
-            .eq("role", "admin")
-            .maybeSingle();
-          navigate(roleData ? "/admin" : "/");
+          // Redirect handled automatically by useEffect watching user + isAdmin
           break;
         }
         case "register":
