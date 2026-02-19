@@ -98,7 +98,7 @@ const CommentModerationPanel = ({ postId }: { postId: string }) => {
   );
 };
 
-// ── New post form ─────────────────────────────────────────────────────────────
+// ── New post form ──────────────────────────────────────────────────────────────
 
 interface PostFormData {
   title: string;
