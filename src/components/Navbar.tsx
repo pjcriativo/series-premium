@@ -29,7 +29,7 @@ const Navbar = () => {
         {/* Left: Logo + Nav Links (desktop only) */}
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center">
-            <img src={logo} alt="Epsodiox" className="h-16 w-auto" />
+            <img src={logo} alt="Epsodiox" className="h-[94px] w-auto" />
           </Link>
           <div className="hidden md:flex items-center gap-6">
             <Link to="/" className="flex items-center gap-1.5 text-base font-medium text-primary hover:text-primary/80 transition-colors">
