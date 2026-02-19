@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Home, TrendingUp, Search as SearchIcon, Coins } from "lucide-react";
+import { Coins } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,17 +29,20 @@ const Navbar = () => {
         {/* Left: Logo + Nav Links (desktop only) */}
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center">
-            <img src={logo} alt="Epsodiox" className="h-12 w-auto" />
+            <img src={logo} alt="Epsodiox" className="h-16 w-auto" />
           </Link>
           <div className="hidden md:flex items-center gap-6">
             <Link to="/" className="flex items-center gap-1.5 text-base font-medium text-primary hover:text-primary/80 transition-colors">
-              <Home className="h-4 w-4" /> Início
+              Início
             </Link>
             <Link to="/search" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
-              <TrendingUp className="h-4 w-4" /> Em Alta
+              Categorias
             </Link>
-            <Link to="/search" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
-              <SearchIcon className="h-4 w-4" /> Buscar
+            <Link to="/fan-club" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
+              Fã-Clube
+            </Link>
+            <Link to="/brand" className="flex items-center gap-1.5 text-base font-medium text-primary/70 hover:text-primary transition-colors">
+              Marca
             </Link>
           </div>
         </div>
