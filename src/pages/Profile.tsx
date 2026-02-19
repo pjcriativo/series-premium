@@ -65,7 +65,7 @@ const Profile = () => {
       const promises = progressList!.map((p) =>
         supabase
           .from("episodes")
-          .select("id, title, episode_number, series_id")
+          .select("id, title, episode_number, series_id, duration_seconds")
           .eq("series_id", p.series_id)
           .eq("episode_number", p.last_episode_number)
           .maybeSingle()
@@ -100,6 +100,9 @@ const Profile = () => {
   };
 
   const seriesMap = new Map(watchedSeries?.map((s) => [s.id, s]) ?? []);
+  const progressMap = new Map(
+    progressList?.map((p) => [p.series_id, p.last_position_seconds]) ?? []
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -171,6 +174,19 @@ const Profile = () => {
                       )}
                       <Badge className="absolute bottom-2 left-2 text-[10px]">Ep. {ep.episode_number}</Badge>
                     </div>
+                    {(() => {
+                      const pos = progressMap.get(ep.series_id) ?? 0;
+                      const dur = (ep as any).duration_seconds;
+                      const progressPct = dur && dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+                      return progressPct > 0 ? (
+                        <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-0 mb-1">
+                          <div
+                            className="h-full bg-primary rounded-full transition-all"
+                            style={{ width: `${progressPct}%` }}
+                          />
+                        </div>
+                      ) : null;
+                    })()}
                     <p className="text-xs font-medium text-foreground truncate">{series.title}</p>
                   </Link>
                 );
