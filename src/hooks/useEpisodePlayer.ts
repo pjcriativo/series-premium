@@ -234,13 +234,7 @@ export const useEpisodePlayer = () => {
     }
   }, [hasAccess, accessLoading, epLoading, episode, navigate, seriesId]);
 
-  // Restore position
-  useEffect(() => {
-    if (savedProgress && videoRef.current && savedProgress.last_position_seconds > 0 &&
-        savedProgress.last_episode_number === episode?.episode_number) {
-      videoRef.current.currentTime = savedProgress.last_position_seconds;
-    }
-  }, [savedProgress, videoUrl]);
+  // (Restore position is now handled via onLoadedMetadata in EpisodePlayer to avoid race conditions)
 
   // Auto-save every 5s
   useEffect(() => {
@@ -326,6 +320,7 @@ export const useEpisodePlayer = () => {
 
   return {
     episode, epLoading, accessLoading, hasAccess,
+    savedProgress,
     videoRef, videoUrl, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,

@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 const EpisodePlayer = () => {
   const {
     episode, epLoading, accessLoading, hasAccess,
+    savedProgress,
     videoRef, videoUrl, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
@@ -116,7 +117,19 @@ const EpisodePlayer = () => {
                     playsInline
                     onClick={togglePlay}
                     onTimeUpdate={handleTimeUpdate}
-                    onLoadedMetadata={() => setDuration(videoRef.current?.duration ?? 0)}
+                    onLoadedMetadata={() => {
+                      const dur = videoRef.current?.duration ?? 0;
+                      setDuration(dur);
+                      // Restaurar posição exata — executado quando o vídeo já sabe a duração
+                      if (
+                        savedProgress &&
+                        savedProgress.last_position_seconds > 0 &&
+                        savedProgress.last_episode_number === episode?.episode_number &&
+                        videoRef.current
+                      ) {
+                        videoRef.current.currentTime = savedProgress.last_position_seconds;
+                      }
+                    }}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onEnded={handleEnded}
