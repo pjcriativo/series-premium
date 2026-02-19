@@ -1,69 +1,92 @@
 
-# Corrigir Navegação: Clicar em Episódio vai direto para o Player
+# Adicionar Botão "Ver Todos os Episódios" no Player
 
-## Problema identificado
+## Contexto atual
 
-Ao clicar em qualquer card de série na home (carrosséis de categorias, "Em Alta", "Continue Assistindo"), o usuário é redirecionado para a página de detalhes da série (`/series/:id`) em vez de ir diretamente ao player do primeiro episódio (`/watch/:episodeId`).
+O player (`src/pages/EpisodePlayer.tsx`) já possui um breadcrumb no painel direito com link para `/series/:id`. Porém, não há nenhum botão visível e destacado que convide o usuário a voltar à página da série — o breadcrumb é pequeno e textual, não chamativo.
 
-### Causa raiz
+O plano adiciona **dois pontos de acesso** ao botão de voltar, ambos no mesmo arquivo:
 
-**1. `src/components/SeriesCard.tsx` — linha 42**
+---
+
+## Mudanças planejadas
+
+### 1. Botão flutuante sobre o vídeo (canto superior esquerdo)
+
+Dentro do container do vídeo (a `<div>` com `relative`), adicionar um botão com ícone de seta que flutua no canto superior esquerdo, sobre o vídeo, sempre visível:
+
 ```tsx
-// ATUAL: leva para a página da série
-<Link ref={ref} to={`/series/${series.id}`} className="group block w-full">
+// Dentro da div do vídeo, logo após a abertura do container
+<Link
+  to={`/series/${seriesId}`}
+  className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm transition-colors"
+>
+  <ChevronLeft className="h-3.5 w-3.5" />
+  Todos os episódios
+</Link>
 ```
-O card inteiro é um `<Link>` para `/series/:id`. O botão play no hover navega corretamente para `/watch/`, mas o clique no card em si vai para a série.
 
-**2. `src/pages/Index.tsx` — linhas 203 e 243**
+Este botão aparece tanto para vídeo nativo quanto para YouTube, pois é colocado antes do `{youtubeId ? ...}`.
+
+### 2. Botão dedicado no painel direito (abaixo do título dos episódios)
+
+Logo abaixo do título da grade de episódios, adicionar um botão secundário com link para a página da série:
+
 ```tsx
-// "Continue Assistindo" — leva para a série
-<Link to={`/series/${item.series.id}`} ...>
+// Abaixo do <h2>Episódios</h2>, antes do grid
+<Link
+  to={`/series/${seriesId}`}
+  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
+>
+  <ChevronLeft className="h-3.5 w-3.5" />
+  Ver página da série
+</Link>
+```
 
-// "Em Alta" — leva para a série
-<Link to={`/series/${s.id}`} ...>
+### 3. Importar `ChevronLeft`
+
+Adicionar `ChevronLeft` à lista de imports do `lucide-react` (linha 3):
+
+```tsx
+// Antes:
+import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
+
+// Depois:
+import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, ChevronLeft, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
 ```
 
 ---
 
-## Solução
+## Resultado visual esperado
 
-### 1. `src/components/SeriesCard.tsx`
-Alterar o `<Link>` principal do card para navegar direto para o player do primeiro episódio quando houver `first_episode_id`, e para `/series/:id` somente como fallback:
+```text
+┌─────────────────────────────────────┐
+│ ← Todos os episódios     [vídeo]    │  ← botão flutuante no canto superior
+│                                     │
+│         [ VÍDEO 9:16 ]             │
+│                                     │
+│  ▶  🔊  ⛶                          │
+└─────────────────────────────────────┘
 
-```tsx
-// Antes:
-<Link ref={ref} to={`/series/${series.id}`} ...>
+Painel direito:
+  Episódio 3 — Título do Episódio
+  Nome da Série
 
-// Depois:
-<Link ref={ref} to={series.first_episode_id ? `/watch/${series.first_episode_id}` : `/series/${series.id}`} ...>
-```
-
-### 2. `src/pages/Index.tsx` — Seção "Continue Assistindo"
-A seção de "Continue Assistindo" registra o último episódio assistido (`last_episode_number`). A navegação correta é buscar o episódio exato e ir para o player. Por ora, já que temos o `series_id`, a melhor opção é navegar para `/series/:id` mantendo o comportamento de "retomar" — esta seção **não precisa mudar**, pois ela leva corretamente para a página da série onde o usuário clica em "Retomar".
-
-### 3. `src/pages/Index.tsx` — Seção "Em Alta"
-O query de trending já busca `first_episode_id` para cada série. Alterar o link:
-
-```tsx
-// Antes:
-<Link to={`/series/${s.id}`} ...>
-
-// Depois:
-<Link to={s.first_episode_id ? `/watch/${s.first_episode_id}` : `/series/${s.id}`} ...>
+  Episódios
+  ← Ver página da série       ← link textual discreto
+  [ 1 ][ 2 ][■3][ 4 ][ 5 ][ 🔒6 ]
 ```
 
 ---
 
 ## Resumo das mudanças
 
-| Arquivo | Onde | Mudança |
-|---|---|---|
-| `src/components/SeriesCard.tsx` | Link wrapper do card | `/series/:id` → `/watch/:first_episode_id` (fallback para `/series/:id`) |
-| `src/pages/Index.tsx` | Seção "Em Alta" | `/series/:id` → `/watch/:first_episode_id` (fallback para `/series/:id`) |
+| Arquivo | Alteração |
+|---|---|
+| `src/pages/EpisodePlayer.tsx` | Importar `ChevronLeft`; adicionar botão flutuante no vídeo; adicionar link no painel direito |
 
-### O que NÃO será alterado
-- Seção "Continue Assistindo" permanece indo para `/series/:id` (correto — usa o botão "Retomar" na página da série)
-- O botão Play no hover do `SeriesCard` (já navega corretamente)
-- A página `SeriesDetail` (`/series/:id`) permanece acessível como destino de fallback
-- Lógica de paywall e desbloqueio de episódios
-
+## O que NÃO será alterado
+- Breadcrumb existente (permanece)
+- Layout do vídeo (9:16, posicionamento)
+- Grade de episódios
+- Lógica de paywall e desbloqueio
