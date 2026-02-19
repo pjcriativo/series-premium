@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
+import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, ChevronLeft, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +84,14 @@ const EpisodePlayer = () => {
               className="w-full max-w-md bg-black rounded-lg overflow-hidden relative"
               style={{ aspectRatio: '9/16', maxHeight: 'calc(100vh - 5rem)' }}
             >
+              {/* Floating back button */}
+              <Link
+                to={`/series/${seriesId}`}
+                className="absolute top-3 left-3 z-20 flex items-center gap-1.5 bg-black/50 hover:bg-black/70 text-white text-xs px-3 py-1.5 rounded-full backdrop-blur-sm transition-colors"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Todos os episódios
+              </Link>
               {youtubeId ? (
                 <iframe
                   src={`https://www.youtube.com/embed/${youtubeId}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
@@ -247,7 +255,14 @@ const EpisodePlayer = () => {
 
             {/* Episode Grid */}
             <div>
-              <h2 className="text-sm font-semibold text-foreground mb-3">Episódios</h2>
+              <h2 className="text-sm font-semibold text-foreground mb-1">Episódios</h2>
+              <Link
+                to={`/series/${seriesId}`}
+                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Ver página da série
+              </Link>
               <div className="grid grid-cols-6 gap-2">
                 {allEpisodes.map((ep) => {
                   const isCurrent = ep.id === episode?.id;
