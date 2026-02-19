@@ -341,6 +341,14 @@ const FanClubManager = () => {
           posts.map((post: any) => (
             <div key={post.id} className="rounded-xl border border-border bg-card p-4">
               <div className="flex items-start gap-3">
+                {post.image_url && (
+                  <img
+                    src={post.image_url}
+                    alt=""
+                    className="w-12 h-12 rounded-lg object-cover shrink-0 bg-muted"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1">
                     <Badge variant={TYPE_COLORS[post.post_type] as any} className="text-xs">
