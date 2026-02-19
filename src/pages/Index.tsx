@@ -22,30 +22,34 @@ const Index = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("user_progress")
-        .select("series_id, last_episode_number, series:series_id(id, title, cover_url)")
+        .select("series_id, last_episode_number, last_position_seconds, series:series_id(id, title, cover_url)")
         .eq("user_id", user!.id)
         .order("updated_at", { ascending: false });
       if (error) throw error;
 
       if (!data || data.length === 0) return [];
 
-      // Buscar episode_id correspondente a cada (series_id, last_episode_number)
+      // Buscar episode_id e duration_seconds para cada (series_id, last_episode_number)
       const seriesIds = data.map((item: any) => item.series_id);
       const { data: episodeData } = await supabase
         .from("episodes")
-        .select("id, series_id, episode_number")
+        .select("id, series_id, episode_number, duration_seconds")
         .in("series_id", seriesIds)
         .eq("is_published", true);
 
-      // Mapa: "series_id-episode_number" => episode_id
+      // Mapa: "series_id-episode_number" => { id, duration_seconds }
       const epMap = new Map(
-        (episodeData || []).map((ep: any) => [`${ep.series_id}-${ep.episode_number}`, ep.id])
+        (episodeData || []).map((ep: any) => [`${ep.series_id}-${ep.episode_number}`, { id: ep.id, duration_seconds: ep.duration_seconds }])
       );
 
-      return data.map((item: any) => ({
-        ...item,
-        resume_episode_id: epMap.get(`${item.series_id}-${item.last_episode_number}`) || null,
-      }));
+      return data.map((item: any) => {
+        const epInfo = epMap.get(`${item.series_id}-${item.last_episode_number}`);
+        return {
+          ...item,
+          resume_episode_id: epInfo?.id || null,
+          duration_seconds: epInfo?.duration_seconds || null,
+        };
+      });
     },
   });
 
@@ -250,6 +254,19 @@ const Index = () => {
                                 Ep. {item.last_episode_number}
                               </div>
                             </div>
+                            {(() => {
+                              const pos = item.last_position_seconds;
+                              const dur = item.duration_seconds;
+                              const progressPct = dur && dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+                              return progressPct > 0 ? (
+                                <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-1 mb-1">
+                                  <div
+                                    className="h-full bg-primary rounded-full transition-all"
+                                    style={{ width: `${progressPct}%` }}
+                                  />
+                                </div>
+                              ) : null;
+                            })()}
                             <h3 className="text-sm font-medium text-foreground truncate">{item.series.title}</h3>
                           </Link>
                         </div>
