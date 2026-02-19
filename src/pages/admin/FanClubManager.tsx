@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,7 +13,7 @@ import {
   AlertDialogContent, AlertDialogDescription,
   AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Trash2, Plus, MessageCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Trash2, Plus, MessageCircle, ChevronDown, ChevronUp, ImageIcon, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -104,23 +103,46 @@ const CommentModerationPanel = ({ postId }: { postId: string }) => {
 interface PostFormData {
   title: string;
   body: string;
-  image_url: string;
   post_type: string;
 }
 
-const EMPTY_FORM: PostFormData = { title: "", body: "", image_url: "", post_type: "post" };
+const EMPTY_FORM: PostFormData = { title: "", body: "", post_type: "post" };
 
 const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
   const { user } = useAuth();
   const [form, setForm] = useState<PostFormData>(EMPTY_FORM);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  const uploadImage = async (file: File): Promise<string> => {
+    const ext = file.name.split(".").pop();
+    const path = `fan-club/${crypto.randomUUID()}.${ext}`;
+    const { error } = await supabase.storage.from("covers").upload(path, file);
+    if (error) throw error;
+    return supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
+  };
 
   const createPost = useMutation({
     mutationFn: async (data: PostFormData) => {
+      setUploading(true);
+      let image_url: string | null = null;
+      try {
+        if (imageFile) image_url = await uploadImage(imageFile);
+      } finally {
+        setUploading(false);
+      }
       const { error } = await supabase.from("fan_club_posts").insert({
         author_id: user!.id,
         title: data.title.trim(),
         body: data.body.trim(),
-        image_url: data.image_url.trim() || null,
+        image_url,
         post_type: data.post_type,
       });
       if (error) throw error;
@@ -128,6 +150,8 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
     onSuccess: () => {
       toast({ title: "Post publicado!" });
       setForm(EMPTY_FORM);
+      setImageFile(null);
+      setImagePreview(null);
       onCreated();
     },
     onError: () => toast({ title: "Erro ao publicar", variant: "destructive" }),
@@ -156,7 +180,8 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
 
         <div className="col-span-2 space-y-1.5">
           <Label>Título</Label>
-          <Input
+          <input
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
             placeholder="Título do post"
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
@@ -174,22 +199,49 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
         </div>
 
         <div className="col-span-2 space-y-1.5">
-          <Label>URL da imagem <span className="text-muted-foreground font-normal">(opcional)</span></Label>
-          <Input
-            placeholder="https://…"
-            value={form.image_url}
-            onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
-          />
+          <Label>Imagem <span className="text-muted-foreground font-normal">(opcional)</span></Label>
+
+          {imagePreview ? (
+            <div className="relative w-full">
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="w-full max-h-48 object-cover rounded-lg"
+              />
+              <button
+                type="button"
+                onClick={() => { setImageFile(null); setImagePreview(null); }}
+                className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-destructive transition-colors"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Clique para selecionar uma imagem</span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleImageChange}
+              />
+            </label>
+          )}
         </div>
       </div>
 
       <Button
-        disabled={!isValid || createPost.isPending}
+        disabled={!isValid || createPost.isPending || uploading}
         onClick={() => createPost.mutate(form)}
         className="gap-2"
       >
-        <Plus className="h-4 w-4" />
-        Publicar
+        {uploading
+          ? "Enviando imagem…"
+          : createPost.isPending
+          ? "Publicando…"
+          : <><Plus className="h-4 w-4" />Publicar</>
+        }
       </Button>
     </div>
   );
