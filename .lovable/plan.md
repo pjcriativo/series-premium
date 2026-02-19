@@ -1,84 +1,69 @@
 
-# Tornar o Navbar Transparente e Flutuante Sobre o Slider
+# Corrigir Navegação: Clicar em Episódio vai direto para o Player
 
-## Diagnóstico
+## Problema identificado
 
-### Problema 1 — Fundo sólido no navbar
-`src/components/Navbar.tsx` linha 27:
+Ao clicar em qualquer card de série na home (carrosséis de categorias, "Em Alta", "Continue Assistindo"), o usuário é redirecionado para a página de detalhes da série (`/series/:id`) em vez de ir diretamente ao player do primeiro episódio (`/watch/:episodeId`).
+
+### Causa raiz
+
+**1. `src/components/SeriesCard.tsx` — linha 42**
 ```tsx
-<nav className="fixed top-0 left-0 right-0 z-50 bg-background/95">
+// ATUAL: leva para a página da série
+<Link ref={ref} to={`/series/${series.id}`} className="group block w-full">
 ```
-O `bg-background/95` cria um fundo escuro sólido separando o menu do slider, gerando a barra visível que o usuário vê. Deve ser `bg-transparent` para que o navbar flutue sobre o conteúdo como uma plataforma de streaming.
+O card inteiro é um `<Link>` para `/series/:id`. O botão play no hover navega corretamente para `/watch/`, mas o clique no card em si vai para a série.
 
-### Problema 2 — Espaço negro acima do slider
-`src/pages/Index.tsx` linha 173:
+**2. `src/pages/Index.tsx` — linhas 203 e 243**
 ```tsx
-<main className="flex-1 pb-20 pt-[182px]">
-```
-O `pt-[182px]` empurra todo o conteúdo (incluindo o slider) para baixo em 182px. Como o navbar é `fixed` (flutua sobre a página), esse padding gera um bloco negro vazio entre o topo e o slider.
+// "Continue Assistindo" — leva para a série
+<Link to={`/series/${item.series.id}`} ...>
 
-A solução correta para o estilo streaming é remover o `pt-[182px]` — o slider vai começar do topo da viewport, e o navbar transparente vai flutuar naturalmente sobre ele, exatamente como Netflix/Prime Video fazem.
+// "Em Alta" — leva para a série
+<Link to={`/series/${s.id}`} ...>
+```
 
 ---
 
-## Mudanças planejadas
+## Solução
 
-### 1. `src/components/Navbar.tsx` — Tornar o fundo transparente
-
-Trocar `bg-background/95` por `bg-transparent`:
+### 1. `src/components/SeriesCard.tsx`
+Alterar o `<Link>` principal do card para navegar direto para o player do primeiro episódio quando houver `first_episode_id`, e para `/series/:id` somente como fallback:
 
 ```tsx
 // Antes:
-<nav className="fixed top-0 left-0 right-0 z-50 bg-background/95">
+<Link ref={ref} to={`/series/${series.id}`} ...>
 
 // Depois:
-<nav className="fixed top-0 left-0 right-0 z-50 bg-transparent">
+<Link ref={ref} to={series.first_episode_id ? `/watch/${series.first_episode_id}` : `/series/${series.id}`} ...>
 ```
 
-O menu permanece `fixed` (fixo no topo, não rola com a página), mas sem fundo visível — flutuará sobre o slider e o conteúdo.
+### 2. `src/pages/Index.tsx` — Seção "Continue Assistindo"
+A seção de "Continue Assistindo" registra o último episódio assistido (`last_episode_number`). A navegação correta é buscar o episódio exato e ir para o player. Por ora, já que temos o `series_id`, a melhor opção é navegar para `/series/:id` mantendo o comportamento de "retomar" — esta seção **não precisa mudar**, pois ela leva corretamente para a página da série onde o usuário clica em "Retomar".
 
-### 2. `src/pages/Index.tsx` — Remover o padding-top do main
-
-Remover o `pt-[182px]` do elemento `<main>`:
+### 3. `src/pages/Index.tsx` — Seção "Em Alta"
+O query de trending já busca `first_episode_id` para cada série. Alterar o link:
 
 ```tsx
 // Antes:
-<main className="flex-1 pb-20 pt-[182px]">
+<Link to={`/series/${s.id}`} ...>
 
 // Depois:
-<main className="flex-1 pb-20">
-```
-
-Isso faz o slider ocupar o espaço completo desde o topo, com o navbar transparente sobreposto.
-
----
-
-## Resultado visual esperado
-
-```text
-┌─────────────────────────────────────────┐
-│ [Logo]  Início  Categorias  Fã-Clube  [Entrar]  ← navbar transparente, fixo
-│─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│  (sem barra, sem fundo)
-│                                         │
-│       [ IMAGEM DO SLIDER / BANNER ]     │ ← slider começa do topo
-│                                         │
-│  Título da série                        │
-│  [▶ Assistir]                          │
-└─────────────────────────────────────────┘
+<Link to={s.first_episode_id ? `/watch/${s.first_episode_id}` : `/series/${s.id}`} ...>
 ```
 
 ---
 
-## Arquivos modificados
+## Resumo das mudanças
 
-| Arquivo | Alteração |
-|---|---|
-| `src/components/Navbar.tsx` | `bg-background/95` → `bg-transparent` |
-| `src/pages/Index.tsx` | Remover `pt-[182px]` do `<main>` |
+| Arquivo | Onde | Mudança |
+|---|---|---|
+| `src/components/SeriesCard.tsx` | Link wrapper do card | `/series/:id` → `/watch/:first_episode_id` (fallback para `/series/:id`) |
+| `src/pages/Index.tsx` | Seção "Em Alta" | `/series/:id` → `/watch/:first_episode_id` (fallback para `/series/:id`) |
 
-## O que NÃO será alterado
+### O que NÃO será alterado
+- Seção "Continue Assistindo" permanece indo para `/series/:id` (correto — usa o botão "Retomar" na página da série)
+- O botão Play no hover do `SeriesCard` (já navega corretamente)
+- A página `SeriesDetail` (`/series/:id`) permanece acessível como destino de fallback
+- Lógica de paywall e desbloqueio de episódios
 
-- Tamanho da logo (mantém `h-[150px]`)
-- Posicionamento `fixed` do navbar (continua fixo, não rola)
-- Todos os gradientes do slider (inferior, esquerda, direita)
-- Links e botões do navbar
