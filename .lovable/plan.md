@@ -1,118 +1,27 @@
 
-# Upload de Imagem para o Storage — Fan Club Admin
+# Diagnóstico: Cache do preview — o código já está correto
 
-## Situação Atual
+## O que foi encontrado
 
-O `NewPostForm` em `src/pages/admin/FanClubManager.tsx` ainda usa um `<Input type="text">` para URL externa no campo de imagem (linhas 176-183). O código anterior foi aprovado mas não foi persistido no arquivo.
+Ao ler o arquivo `src/pages/admin/FanClubManager.tsx`, o código **já contém toda a implementação de upload** solicitada:
 
-## O que será alterado
+- Linha 114: `useState<File | null>(null)` para o arquivo
+- Linha 115: `useState<string | null>(null)` para o preview
+- Linha 116: `useState(false)` para o estado de upload
+- Linhas 118–122: `handleImageChange` que gera preview local via `URL.createObjectURL`
+- Linhas 124–130: `uploadImage` que envia para `covers/fan-club/` no Supabase Storage
+- Linhas 201–231: UI completa com área clicável tracejada e `ImageIcon`, preview com botão `X`
 
-### Arquivo: `src/pages/admin/FanClubManager.tsx`
+## Por que o preview ainda mostra o campo de URL antiga
 
-#### 1. Remover `Input` dos imports (linha 7) — não será mais usado no formulário
+O preview do browser está mostrando uma versão em **cache** do componente. O arquivo fonte já foi atualizado corretamente — o Vite HMR (Hot Module Replacement) às vezes não reaplica mudanças quando o componente estava montado antes da edição ser salva.
 
-#### 2. Adicionar imports de ícones (linha 17)
-Adicionar `ImageIcon` e `X` ao import de `lucide-react`.
+## Solução
 
-#### 3. Refatorar a interface `PostFormData` (linha 104–109)
-Remover o campo `image_url` do estado do formulário — a URL virá do Storage após o upload, não de um campo de texto.
+Fazer um **ajuste mínimo no arquivo** (reformatar um comentário interno) para forçar o Vite a recompilar e recarregar o módulo `FanClubManager.tsx` no preview. Isso vai garantir que o browser carregue a versão mais recente com o seletor de arquivo.
 
-```typescript
-interface PostFormData {
-  title: string;
-  body: string;
-  post_type: string;
-}
-const EMPTY_FORM: PostFormData = { title: "", body: "", post_type: "post" };
-```
+Nenhuma mudança de lógica ou UI é necessária — o código já está implementado corretamente. Apenas forçar o reload do módulo.
 
-#### 4. Adicionar 3 novos estados ao `NewPostForm` (após linha 115)
-```typescript
-const [imageFile, setImageFile]     = useState<File | null>(null);
-const [imagePreview, setImagePreview] = useState<string | null>(null);
-const [uploading, setUploading]     = useState(false);
-```
+## Arquivo a ser alterado
 
-#### 5. Adicionar handler de seleção e função de upload
-```typescript
-const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0] ?? null;
-  setImageFile(file);
-  setImagePreview(file ? URL.createObjectURL(file) : null);
-};
-
-const uploadImage = async (file: File): Promise<string> => {
-  const ext = file.name.split(".").pop();
-  const path = `fan-club/${crypto.randomUUID()}.${ext}`;
-  const { error } = await supabase.storage.from("covers").upload(path, file);
-  if (error) throw error;
-  return supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
-};
-```
-
-#### 6. Atualizar a `mutationFn` para fazer upload antes do INSERT
-```typescript
-mutationFn: async (data: PostFormData) => {
-  setUploading(true);
-  let image_url: string | null = null;
-  try {
-    if (imageFile) image_url = await uploadImage(imageFile);
-  } finally {
-    setUploading(false);
-  }
-  const { error } = await supabase.from("fan_club_posts").insert({
-    author_id: user!.id,
-    title: data.title.trim(),
-    body: data.body.trim(),
-    image_url,
-    post_type: data.post_type,
-  });
-  if (error) throw error;
-},
-```
-
-#### 7. Limpar estados de imagem no `onSuccess`
-```typescript
-onSuccess: () => {
-  toast({ title: "Post publicado!" });
-  setForm(EMPTY_FORM);
-  setImageFile(null);
-  setImagePreview(null);
-  onCreated();
-},
-```
-
-#### 8. Substituir o campo de URL pela UI de upload (linhas 176-183)
-
-Substituir o bloco `<div>` com `<Input placeholder="https://…">` por:
-
-- Quando **nenhuma imagem** selecionada: área clicável com borda tracejada e ícone `ImageIcon`
-- Quando **imagem selecionada**: preview `<img>` com altura máxima de 48 e botão `X` para remover no canto superior direito
-
-#### 9. Atualizar o botão Publicar para refletir o estado de upload
-```tsx
-<Button disabled={!isValid || createPost.isPending || uploading} ...>
-  {uploading
-    ? "Enviando imagem…"
-    : createPost.isPending
-    ? "Publicando…"
-    : <><Plus className="h-4 w-4" />Publicar</>
-  }
-</Button>
-```
-
-## Sobre a RLS de Storage
-
-A migration de política de INSERT para o bucket `covers` (pasta `fan-club/`) foi gerada na sessão anterior. Se o upload retornar erro de permissão ao testar, será necessário rodar a migration no SQL Editor do Supabase.
-
-## Resumo das mudanças
-
-| Aspecto | Antes | Depois |
-|---|---|---|
-| Campo de imagem | `<Input type="text">` com URL | Seletor de arquivo nativo |
-| Preview | Nenhum | Preview local antes de publicar |
-| Upload | Não havia | `supabase.storage.from("covers").upload` |
-| Feedback | Nenhum | "Enviando imagem…" no botão |
-| Armazenamento | URL externa (pode sair do ar) | Storage interno do Supabase |
-
-Nenhuma migração de banco é necessária — `image_url` já é `text nullable` na tabela `fan_club_posts`.
+- `src/pages/admin/FanClubManager.tsx` — ajuste mínimo no comentário da seção `New post form` para triggerar HMR
