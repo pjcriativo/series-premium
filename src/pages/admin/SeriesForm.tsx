@@ -108,9 +108,9 @@ const SeriesForm = () => {
       }
     },
     onSuccess: () => {
-      console.log("[SERIES_FORM] saved ok");
       queryClient.invalidateQueries({ queryKey: ["admin-series"] });
       queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-series-list"] });
       toast({ title: id ? "Série atualizada" : "Série criada" });
       navigate("/admin/series");
     },

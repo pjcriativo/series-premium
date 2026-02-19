@@ -33,6 +33,8 @@ const EpisodeManager = () => {
   const { data: seriesList } = useQuery({
     queryKey: ["admin-series-list"],
     queryFn: async () => { const { data, error } = await supabase.from("series").select("id, title").order("title"); if (error) throw error; return data; },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: episodes, isLoading } = useQuery({
