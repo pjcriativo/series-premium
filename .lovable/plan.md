@@ -1,62 +1,128 @@
 
-# Adicionar Seleção de Nível de Acesso no Cadastro de Usuário
+# Adicionar Role no Editar + Coluna de Email na Tabela
 
-## O que será alterado
+## Problemas identificados
 
-### 1. Formulário "Novo Usuário" — `src/pages/admin/UserManager.tsx`
+### 1. Modal "Editar Usuário" não tem campo de nível de acesso
+O estado `editDialog` só guarda `{ userId, name }` e o formulário só tem o campo de nome. Não há como alterar o papel do usuário (admin/comum) sem clicar no botão de escudo separado na tabela.
 
-Adicionar um campo de seleção **"Nível de acesso"** no modal de criação de usuário, com duas opções:
-- **Usuário comum** (padrão)
-- **Administrador**
+### 2. Coluna de email ausente na tabela
+A tabela `profiles` não armazena email — ele fica apenas no `auth.users`. A query atual busca apenas `id, display_name, avatar_url, created_at` da tabela `profiles`. Para exibir o email, a solução mais segura e simples é adicionar uma nova action `"list"` na Edge Function `admin-manage-user`, que usa o `supabaseAdmin` (service role) para chamar `auth.admin.listUsers()` e retorna id + email de todos os usuários. O frontend faz um merge desse resultado com os profiles.
 
-O estado do formulário passará a incluir `role: "user" | "admin"`, e esse valor será enviado para a Edge Function junto com os outros dados.
+### 3. Edge Function `update` não processa mudança de role
+A action `update` atualmente só atualiza `display_name` no perfil. Precisamos que ela também receba `role` e adicione ou remova o papel `admin` na tabela `user_roles`.
 
-```
-Formulário atual:          Formulário novo:
-┌─────────────────┐       ┌─────────────────────┐
-│ Email           │       │ Email               │
-│ Senha           │       │ Senha               │
-│ Nome de exibição│  →    │ Nome de exibição    │
-│                 │       │ Nível de acesso     │
-│ [Criar Usuário] │       │   ○ Usuário comum   │
-└─────────────────┘       │   ○ Administrador   │
-                          │ [Criar Usuário]     │
-                          └─────────────────────┘
-```
+---
 
-### 2. Edge Function `admin-manage-user` — `supabase/functions/admin-manage-user/index.ts`
+## Mudanças planejadas
 
-Após criar o usuário com sucesso, se `role === "admin"`, inserir um registro na tabela `user_roles` com o papel `admin` usando o `supabaseAdmin` (service role):
+### `supabase/functions/admin-manage-user/index.ts`
+
+**Nova action `"list"`**: retorna a lista de emails de todos os usuários via `supabaseAdmin.auth.admin.listUsers()`.
 
 ```typescript
-// Após criar o usuário no Auth:
-if (role === "admin") {
-  await supabaseAdmin
-    .from("user_roles")
-    .insert({ user_id: data.user.id, role: "admin" });
+if (action === "list") {
+  const { data, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+  if (error) throw error;
+  return new Response(JSON.stringify({
+    users: data.users.map(u => ({ id: u.id, email: u.email }))
+  }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
 }
-// O gatilho handle_new_user() já insere o papel "user" automaticamente.
-// Para admin, inserimos o papel adicional "admin".
 ```
 
-**Nota importante:** O `handle_new_user()` trigger já insere automaticamente o papel `"user"` para todo novo usuário. Portanto, para admins, apenas inserimos o papel extra `"admin"` — não é necessário remover o `"user"`, pois o sistema usa `has_role(_user_id, 'admin')` que verifica especificamente o papel `admin`.
+**Action `"update"` expandida**: além de atualizar `display_name`, processa a mudança de `role`:
+- Se `role === "admin"` → insere `{ user_id, role: "admin" }` em `user_roles` (se não existir)
+- Se `role === "user"` → deleta o registro `admin` de `user_roles`
+- Se `role` não foi enviado → comportamento atual mantido (só atualiza nome)
 
-### 3. Banco de dados — sem alterações necessárias
+```typescript
+if (role !== undefined) {
+  if (role === "admin") {
+    await supabaseAdmin.from("user_roles")
+      .upsert({ user_id, role: "admin" }, { onConflict: "user_id,role" });
+  } else {
+    await supabaseAdmin.from("user_roles")
+      .delete().eq("user_id", user_id).eq("role", "admin");
+  }
+}
+```
 
-A tabela `user_roles` já suporta múltiplos papéis por usuário e já tem a RLS correta. Nenhuma migration é necessária.
+---
+
+### `src/pages/admin/UserManager.tsx`
+
+**1. Busca de emails**: adicionar uma segunda query que chama a action `"list"` da edge function para obter os emails. O resultado é mergeado com os profiles via `Map<id, email>`.
+
+```typescript
+// Nova query de emails
+const { data: emailMap } = useQuery({
+  queryKey: ["admin-users-emails"],
+  queryFn: async () => {
+    const { data } = await supabase.functions.invoke("admin-manage-user", {
+      body: { action: "list" },
+    });
+    return new Map(data.users.map((u: any) => [u.id, u.email]));
+  },
+});
+```
+
+**2. Interface `UserRow`**: adicionar campo `email: string`.
+
+**3. Tabela**: adicionar coluna "Email" entre "Nome" e "Moedas". O campo de busca também passará a incluir o email:
+```typescript
+const filtered = (users ?? []).filter(u =>
+  (u.display_name || "").toLowerCase().includes(search.toLowerCase()) ||
+  (u.email || "").toLowerCase().includes(search.toLowerCase())
+);
+```
+
+**4. Estado `editDialog`**: expandir para incluir `roles: string[]`:
+```typescript
+const [editDialog, setEditDialog] = useState<{
+  userId: string; name: string; roles: string[]
+} | null>(null);
+const [editRole, setEditRole] = useState<"user" | "admin">("user");
+```
+
+**5. Modal "Editar Usuário"**: adicionar campo "Nível de acesso" com Select abaixo do campo de nome, pré-selecionado com o papel atual do usuário. O `editUserMutation` passará a enviar também o `role`:
+
+```typescript
+body: {
+  action: "update",
+  user_id: editDialog!.userId,
+  display_name: editName,
+  role: editRole,
+}
+```
+
+**6. Ao abrir o modal de edição**, pré-popular `editRole` com base nos roles atuais do usuário:
+```typescript
+onClick={() => {
+  setEditDialog({ userId: u.id, name: u.display_name || "", roles: u.roles });
+  setEditName(u.display_name || "");
+  setEditRole(u.roles.includes("admin") ? "admin" : "user");
+}}
+```
+
+---
+
+## Fluxo completo após as mudanças
+
+1. Admin clica em "Lápis" num usuário comum
+2. Modal abre com nome preenchido e "Nível de acesso: Usuário comum"
+3. Admin altera para "Administrador" e clica "Salvar"
+4. Edge Function atualiza o nome E insere `admin` em `user_roles`
+5. A tabela atualiza mostrando o badge `admin` no usuário
+
+---
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/pages/admin/UserManager.tsx` | Adicionar campo `role` no `createForm` e Select no modal |
-| `supabase/functions/admin-manage-user/index.ts` | Processar o `role` e inserir na `user_roles` após criar |
+| `supabase/functions/admin-manage-user/index.ts` | Nova action `list` + `update` processa role |
+| `src/pages/admin/UserManager.tsx` | Query de emails, coluna Email, campo role no modal editar |
 
-## Fluxo completo após a mudança
+## Banco de dados — sem alterações necessárias
 
-1. Admin abre "Novo Usuário"
-2. Preenche email, senha, nome e seleciona **Administrador** ou **Usuário comum**
-3. Clica em "Criar Usuário"
-4. Edge Function cria o usuário no Auth (trigger insere `user` em `user_roles` automaticamente)
-5. Se `role === "admin"`, Edge Function insere também `admin` em `user_roles`
-6. Usuário aparece na lista com o badge correto (admin ou user)
+A tabela `user_roles` já suporta múltiplos papéis e a `user_roles` já tem RLS correta para admins fazerem insert/delete via service role.
