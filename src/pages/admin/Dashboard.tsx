@@ -137,7 +137,7 @@ const Dashboard = () => {
                   <BarChart data={metrics!.viewsBySeriesSorted} layout="vertical" margin={{ left: 8, right: 16 }}>
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="title" width={120} tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} />
-                    <Tooltip formatter={(v: number) => [v, "Views"]} />
+                    <Tooltip formatter={(v: number) => [v, "Visualizações"]} />
                     <Bar dataKey="count" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>

@@ -127,7 +127,7 @@ const ReelItem = ({ episode, isActive }: { episode: ReelEpisode; isActive: boole
         </button>
         <button onClick={handleShare} className="flex flex-col items-center gap-0.5">
           <Share2 className="h-7 w-7 text-white" />
-          <span className="text-white text-[10px]">Share</span>
+          <span className="text-white text-[10px]">Compartilhar</span>
         </button>
         <button
           onClick={() => navigate(`/watch/${episode.id}`)}
