@@ -60,6 +60,8 @@ const EpisodeForm = () => {
       if (error) throw error;
       return data;
     },
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const { data: episode } = useQuery({
