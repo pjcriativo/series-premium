@@ -1,78 +1,77 @@
 
-# Correção — Série Recém-Cadastrada Não Aparece no Formulário de Episódio
+# Diagnóstico e Correção — Filtro e Busca no Gerenciador de Episódios
 
-## Diagnóstico Completo
+## Causa Raiz Identificada
 
-### Problema Principal: Cache não invalidado
+Existem dois problemas distintos:
 
-Quando o admin cadastra uma nova série em `SeriesForm.tsx`, o `onSuccess` invalida:
-- `["admin-series"]` — query do gerenciador de séries
-- `["admin-series-detail"]` — query de detalhe de uma série
+### Problema 1: Campo de busca não filtra por nome da série
 
-Mas **não invalida** `["admin-series-list"]`, que é a query usada pelo `EpisodeForm` e `EpisodeManager` para popular o select de séries. O React Query mantém esses dados em cache e não refaz a busca — por isso a série nova não aparece na lista.
-
-### Problema Secundário: staleTime padrão
-
-Sem configuração de `staleTime`, o React Query considera os dados "fresh" por 0ms — porém, como a query não foi invalidada, o cache antigo permanece sem disparar novo fetch até que o componente seja desmontado e remontado.
-
-## Mudanças
-
-### 1. `src/pages/admin/SeriesForm.tsx` — invalidar `admin-series-list` no `onSuccess`
-
-Adicionar uma linha no `onSuccess` da `saveMutation`:
+No `EpisodeManager.tsx`, a linha de filtro é:
 
 ```typescript
-onSuccess: () => {
-  queryClient.invalidateQueries({ queryKey: ["admin-series"] });
-  queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] });
-  queryClient.invalidateQueries({ queryKey: ["admin-series-list"] }); // ← NOVA LINHA
-  toast({ title: id ? "Série atualizada" : "Série criada" });
-  navigate("/admin/series");
-},
+const filtered = (episodes ?? []).filter(ep =>
+  ep.title.toLowerCase().includes(search.toLowerCase())
+);
 ```
 
-### 2. `src/pages/admin/EpisodeForm.tsx` — adicionar `staleTime: 0` e `refetchOnMount: "always"` na query de séries
+Ela compara o texto digitado **apenas** com `ep.title` (título do episódio). Quando o admin digita "O Livro de Enoque", está pesquisando pelo nome da **série**, mas o código só procura no título do **episódio** — por isso não encontra nada.
 
-Garantir que toda vez que o formulário de episódio é aberto, a lista de séries é sempre buscada do servidor:
+### Problema 2: A série "O Livro de Enoque" não tem episódios cadastrados
+
+Confirmado diretamente no banco: a série existe (`id: 1b4a4899...`), mas não tem nenhum episódio vinculado. Isso é esperado — a série foi cadastrada mas os episódios ainda não foram adicionados. O problema é que não há feedback claro informando isso ao admin.
+
+### Problema 3: UX confusa — dois filtros sem diferenciação clara
+
+Existe um campo de busca por texto E um select de série. Não está claro para o usuário que:
+- O campo de texto filtra por **título de episódio**
+- O select filtra pela **série**
+
+---
+
+## Correções Planejadas
+
+### 1. Ampliar o filtro de texto para incluir o nome da série
+
+Atualizar a linha de filtragem em `EpisodeManager.tsx` para também buscar no título da série vinculada ao episódio:
 
 ```typescript
-const { data: seriesList } = useQuery({
-  queryKey: ["admin-series-list"],
-  queryFn: async () => {
-    const { data, error } = await supabase.from("series").select("id, title").order("title");
-    if (error) throw error;
-    return data;
-  },
-  staleTime: 0,           // ← dados sempre considerados desatualizados
-  refetchOnMount: "always", // ← revalida sempre que o componente monta
-});
+const filtered = (episodes ?? []).filter(ep =>
+  ep.title.toLowerCase().includes(search.toLowerCase()) ||
+  (ep.series?.title ?? "").toLowerCase().includes(search.toLowerCase())
+);
 ```
 
-### 3. `src/pages/admin/EpisodeManager.tsx` — mesma correção na query de séries
+Isso permite que o admin digite "Livro de Enoque" e veja todos os episódios daquela série.
 
-A mesma query `admin-series-list` existe no gerenciador de episódios para popular o filtro por série:
+### 2. Melhorar placeholder do campo de busca
+
+Alterar o placeholder de "Buscar episódios..." para "Buscar por título ou série..." para deixar claro o que o campo aceita.
+
+### 3. Resetar página ao mudar a série selecionada no Select
+
+Atualmente `useEffect(() => setPage(0), [search])` só reseta quando o texto muda. Quando o usuário muda o Select de série, a página não é resetada — pode gerar "página 3 de 1" em casos de troca. Adicionar `selectedSeries` na dependência do effect:
 
 ```typescript
-const { data: seriesList } = useQuery({
-  queryKey: ["admin-series-list"],
-  queryFn: async () => { ... },
-  staleTime: 0,
-  refetchOnMount: "always",
-});
+useEffect(() => setPage(0), [search, selectedSeries]);
 ```
 
-## Por Que Três Mudanças?
+### 4. Indicação clara quando série selecionada não tem episódios
 
-| Arquivo | Mudança | Motivo |
-|---|---|---|
-| `SeriesForm.tsx` | Invalidar `admin-series-list` | A fonte do dado: quando uma série é salva, todos os consumidores da lista devem ser notificados |
-| `EpisodeForm.tsx` | `staleTime: 0` + `refetchOnMount` | Defesa secundária: garante que ao abrir o form, a lista sempre reflete o estado atual do banco |
-| `EpisodeManager.tsx` | `staleTime: 0` + `refetchOnMount` | Mesma defesa para o filtro de séries no gerenciador de episódios |
+Quando `selectedSeries !== "all"` e a lista retorna vazia, mostrar uma mensagem mais útil:
 
-## Arquivo Alterados
+```
+"Esta série ainda não tem episódios. Clique em '+ Novo Episódio' para adicionar."
+```
 
-- `src/pages/admin/SeriesForm.tsx` — 1 linha adicionada no `onSuccess`
-- `src/pages/admin/EpisodeForm.tsx` — 2 propriedades adicionadas na query `admin-series-list`
-- `src/pages/admin/EpisodeManager.tsx` — 2 propriedades adicionadas na query `admin-series-list`
+---
+
+## Arquivo Alterado
+
+Apenas `src/pages/admin/EpisodeManager.tsx`:
+- Filtro de texto ampliado para incluir `ep.series?.title`
+- Placeholder do campo de busca atualizado
+- `useEffect` de reset de página inclui `selectedSeries`
+- Mensagem de lista vazia contextual quando série selecionada não tem episódios
 
 Nenhuma alteração de banco de dados necessária.
