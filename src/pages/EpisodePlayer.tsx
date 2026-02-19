@@ -249,7 +249,7 @@ const EpisodePlayer = () => {
             {synopsis && (
               <div>
                 <h2 className="text-sm font-semibold text-foreground mb-1">
-                  Plot of Episode {episode?.episode_number}
+                  Sinopse do Episódio {episode?.episode_number}
                 </h2>
                 <p className="text-sm text-muted-foreground leading-relaxed">{synopsis}</p>
               </div>
@@ -274,7 +274,7 @@ const EpisodePlayer = () => {
               </button>
               <button onClick={handleShare} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-foreground transition-colors">
                 <Share2 className="h-5 w-5" />
-                <span className="text-xs">Share</span>
+                <span className="text-xs">Compartilhar</span>
               </button>
             </div>
 
