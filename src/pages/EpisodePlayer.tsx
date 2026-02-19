@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { Play, Pause, Volume2, VolumeX, RotateCcw, ChevronRight, ChevronLeft, Loader2, Lock, Heart, Star, Share2, Maximize } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,12 @@ const EpisodePlayer = () => {
   const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
 
   const [paywallEpisode, setPaywallEpisode] = useState<{ id: string; title: string; episode_number: number; price_coins: number } | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
+  const navigateWithTransition = useCallback((path: string) => {
+    setIsTransitioning(true);
+    setTimeout(() => navigate(path), 200);
+  }, [navigate]);
 
   const isLoading = epLoading || accessLoading;
 
@@ -76,7 +82,7 @@ const EpisodePlayer = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      <main className="pt-16 px-4 lg:px-8 pb-20 md:pb-8">
+      <main className={cn("pt-16 px-4 lg:px-8 pb-20 md:pb-8", isTransitioning ? "animate-fade-out" : "animate-fade-in")}>
         <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
           {/* Left column - Vertical Video */}
           <div className="lg:w-[55%] flex justify-center lg:justify-end">
@@ -167,7 +173,13 @@ const EpisodePlayer = () => {
                             <p className="text-white font-semibold text-sm">
                               Próximo: Ep. {nextEpisode.episode_number} — {nextEpisode.title}
                             </p>
-                            <Button onClick={handleNext} disabled={autoUnlocking} className="w-full rounded-full gap-2">
+                            <Button onClick={() => {
+                              if (isNextAccessible) {
+                                navigateWithTransition(`/watch/${nextEpisode.id}`);
+                              } else {
+                                handleNext();
+                              }
+                            }} disabled={autoUnlocking} className="w-full rounded-full gap-2">
                               {autoUnlocking ? <Loader2 className="h-4 w-4 animate-spin" /> : isNextAccessible ? <ChevronRight className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                               {isNextAccessible ? "Próximo Episódio" : "Desbloquear Próximo"}
                             </Button>
@@ -273,7 +285,7 @@ const EpisodePlayer = () => {
                       onClick={() => {
                         if (ep.id === episode?.id) return;
                         if (accessible) {
-                          navigate(`/watch/${ep.id}`);
+                          navigateWithTransition(`/watch/${ep.id}`);
                         } else {
                           setPaywallEpisode(ep);
                         }
@@ -334,7 +346,7 @@ const EpisodePlayer = () => {
             queryClient.invalidateQueries({ queryKey: ["episode-unlock", paywallEpisode.id] });
             setPaywallEpisode(null);
           }}
-          onNavigateToWatch={(epId) => navigate(`/watch/${epId}`)}
+          onNavigateToWatch={(epId) => navigateWithTransition(`/watch/${epId}`)}
         />
       )}
 
