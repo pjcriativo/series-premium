@@ -98,6 +98,11 @@ const CommentModerationPanel = ({ postId }: { postId: string }) => {
   );
 };
 
+// ── Validation constants ──────────────────────────────────────────────────────
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+const ACCEPTED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
 // ── New post form ──────────────────────────────────────────────────────────────
 
 interface PostFormData {
@@ -117,8 +122,32 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
+
+    // Zera o input para permitir re-selecionar o mesmo arquivo após erro
+    e.target.value = "";
+
+    if (!file) return;
+
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      toast({
+        title: "Formato não suportado",
+        description: "Use JPG, PNG ou WebP.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      toast({
+        title: "Imagem muito grande",
+        description: `O arquivo tem ${(file.size / 1024 / 1024).toFixed(1)} MB. O limite é 5 MB.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     setImageFile(file);
-    setImagePreview(file ? URL.createObjectURL(file) : null);
+    setImagePreview(URL.createObjectURL(file));
   };
 
   const uploadImage = async (file: File): Promise<string> => {
@@ -222,7 +251,7 @@ const NewPostForm = ({ onCreated }: { onCreated: () => void }) => {
               <span className="text-sm text-muted-foreground">Clique para selecionar uma imagem</span>
               <input
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 className="hidden"
                 onChange={handleImageChange}
               />
