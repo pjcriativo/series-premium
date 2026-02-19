@@ -11,7 +11,7 @@ import HeroSlider from "@/components/HeroSlider";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import CategoryRow from "@/components/CategoryRow";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Flame } from "lucide-react";
+import { Flame, Play } from "lucide-react";
 
 const Index = () => {
   const { user } = useAuth();
@@ -240,6 +240,12 @@ const Index = () => {
                                   </span>
                                 </div>
                               )}
+                              {/* Overlay com ícone Play */}
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-60 group-hover:opacity-100 transition-opacity duration-200">
+                                <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 border border-white/30">
+                                  <Play className="h-5 w-5 text-white fill-white" />
+                                </div>
+                              </div>
                               <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded">
                                 Ep. {item.last_episode_number}
                               </div>
