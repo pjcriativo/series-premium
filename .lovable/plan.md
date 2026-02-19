@@ -1,76 +1,127 @@
 
-# Melhorar "Continue Assistindo": ir direto ao episódio exato
+# Animação de Transição ao Navegar entre Episódios no Player
 
-## Situação atual
+## Contexto atual
 
-A query `continueWatching` em `src/pages/Index.tsx` (linha 19-31) busca:
-- `series_id`
-- `last_episode_number`
-- dados da série (id, title, cover_url)
+Ao clicar em outro episódio na grade (ou no botão "Próximo Episódio"), o `navigate(`/watch/${ep.id}`)` é chamado diretamente, causando uma troca abrupta e sem transição visual.
 
-O `<Link>` na linha 204 usa `to={`/series/${item.series.id}`}` — leva para a página da série, não para o player do episódio exato onde o usuário parou.
+O projeto usa `tailwindcss-animate` (já instalado) e possui keyframes de `accordion-down/up`, mas não possui keyframes de fade/scale para o player.
 
-## Causa raiz
+---
 
-O `episode_id` do episódio onde o usuário parou nunca é buscado. A tabela `user_progress` armazena `last_episode_number`, não `episode_id` diretamente — então precisamos fazer um join/lookup adicional para obter o `episode_id` correto.
+## Solução: Fade-out → navigate → Fade-in
 
-## Solução
+A estratégia é:
+1. Ao clicar em outro episódio, em vez de navegar imediatamente, disparar um **fade-out** no container do player
+2. Após a animação terminar (~300ms), executar o `navigate()`
+3. Ao montar o novo episódio, o container faz **fade-in** automaticamente via CSS
 
-### Passo 1 — Enriquecer a query `continueWatching`
+Isso é feito puramente com React state + CSS Tailwind, sem nenhuma biblioteca extra.
 
-Após buscar o `user_progress`, fazer um segundo fetch na tabela `episodes` para obter os `episode_id`s correspondentes a cada `(series_id, last_episode_number)`:
+---
+
+## Mudanças planejadas
+
+### 1. `tailwind.config.ts` — Adicionar keyframes de fade
+
+Adicionar os keyframes `fade-in` e `fade-out` com translateY sutil (como nos exemplos da documentação do projeto):
 
 ```ts
-// Após buscar user_progress:
-const seriesEpPairs = (data || []).map((item: any) => ({
-  series_id: item.series_id,
-  ep_number: item.last_episode_number,
-}));
-
-// Buscar todos os episódios correspondentes de uma vez
-const { data: episodeIds } = await supabase
-  .from("episodes")
-  .select("id, series_id, episode_number")
-  .in("series_id", seriesEpPairs.map(p => p.series_id))
-  .eq("is_published", true);
-
-// Montar mapa: series_id + episode_number => episode_id
-const epMap = new Map(
-  (episodeIds || []).map((ep: any) => [`${ep.series_id}-${ep.episode_number}`, ep.id])
-);
-
-return (data || []).map((item: any) => ({
-  ...item,
-  resume_episode_id: epMap.get(`${item.series_id}-${item.last_episode_number}`) || null,
-}));
+keyframes: {
+  // existentes...
+  "fade-in": {
+    "0%": { opacity: "0", transform: "translateY(8px)" },
+    "100%": { opacity: "1", transform: "translateY(0)" },
+  },
+  "fade-out": {
+    "0%": { opacity: "1", transform: "translateY(0)" },
+    "100%": { opacity: "0", transform: "translateY(-8px)" },
+  },
+},
+animation: {
+  // existentes...
+  "fade-in": "fade-in 0.25s ease-out",
+  "fade-out": "fade-out 0.2s ease-in forwards",
+},
 ```
 
-### Passo 2 — Atualizar o `<Link>` do card
+### 2. `src/pages/EpisodePlayer.tsx` — Adicionar estado de transição e animação
+
+**a) Novo estado `isTransitioning`:**
 
 ```tsx
-// Antes (linha 204):
-<Link to={`/series/${item.series.id}`} ...>
-
-// Depois:
-<Link
-  to={item.resume_episode_id
-    ? `/watch/${item.resume_episode_id}`
-    : `/series/${item.series.id}`}
-  ...
->
+const [isTransitioning, setIsTransitioning] = useState(false);
 ```
 
-O fallback `/series/:id` é mantido para o caso de nenhum `episode_id` ser encontrado (ex.: episódio despublicado).
+**b) Função `navigateWithTransition` — substitui chamadas diretas de `navigate`:**
+
+```tsx
+const navigateWithTransition = useCallback((path: string) => {
+  setIsTransitioning(true);
+  setTimeout(() => {
+    navigate(path);
+  }, 200); // duração do fade-out
+}, [navigate]);
+```
+
+**c) Aplicar classe de animação no container principal do player:**
+
+```tsx
+// `<main>` recebe a classe de animação condicional
+<main className={cn(
+  "pt-16 px-4 lg:px-8 pb-20 md:pb-8",
+  isTransitioning ? "animate-fade-out" : "animate-fade-in"
+)}>
+```
+
+**d) Substituir os 3 pontos onde `navigate` é chamado para trocar episódio:**
+
+| Localização | Chamada atual | Nova chamada |
+|---|---|---|
+| Grade de episódios (botão numérico) | `navigate(\`/watch/${ep.id}\`)` | `navigateWithTransition(\`/watch/${ep.id}\`)` |
+| Botão "Próximo Episódio" (end screen) | dentro de `handleNext` no hook | Expor callback ou tratar no componente |
+| PaywallModal `onNavigateToWatch` | `navigate(\`/watch/${epId}\`)` | `navigateWithTransition(\`/watch/${epId}\`)` |
+
+Para o `handleNext` (que vive no hook `useEpisodePlayer`), a abordagem mais limpa é **não alterar o hook** e sim sobrescrever o comportamento no componente, usando o `navigateWithTransition` diretamente nas chamadas de `onClick` da tela de fim de episódio:
+
+```tsx
+// End screen - "Próximo Episódio"
+<Button onClick={() => {
+  if (isNextAccessible) {
+    navigateWithTransition(`/watch/${nextEpisode.id}`);
+  } else {
+    handleNext(); // para auto-unlock, mantém lógica do hook
+  }
+}} ...>
+```
+
+---
+
+## Resultado visual
+
+```text
+[Clique no episódio 4]
+      ↓
+Container faz fade-out para baixo (200ms)
+      ↓
+navigate('/watch/episodio-4-id') é chamado
+      ↓
+Componente remonta → fade-in de cima para baixo (250ms)
+```
+
+A transição é suave, sem flash de tela branca.
+
+---
 
 ## Resumo das mudanças
 
-| Arquivo | Onde | Mudança |
-|---|---|---|
-| `src/pages/Index.tsx` | Query `continueWatching` | Adicionar segundo fetch para mapear `(series_id, episode_number)` → `episode_id` |
-| `src/pages/Index.tsx` | `<Link>` do card "Continue Assistindo" | Usar `resume_episode_id` para ir direto ao player |
+| Arquivo | Alteração |
+|---|---|
+| `tailwind.config.ts` | Adicionar keyframes `fade-in` / `fade-out` e suas animações |
+| `src/pages/EpisodePlayer.tsx` | Estado `isTransitioning`, função `navigateWithTransition`, classe condicional no `<main>`, atualizar pontos de navegação entre episódios |
 
 ## O que NÃO será alterado
-- Estrutura do carrossel "Continue Assistindo"
-- Badge "Ep. X" que já aparece no card
-- Qualquer outra seção da home
-- Lógica de progresso e salvamento
+- Hook `useEpisodePlayer` (nenhuma mudança de lógica)
+- Layout, grid de episódios, paywall
+- Navegação para a página da série (botão "Todos os episódios" — não precisa de transição)
+- Lógica de auto-unlock
