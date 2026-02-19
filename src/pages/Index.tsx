@@ -240,7 +240,7 @@ const Index = () => {
                   <HorizontalCarousel title="🔥 Em Alta">
                     {trendingSeries.map((s: any) => (
                       <div key={s.id} className="w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_2rem)/3)] lg:w-[calc((100%_-_5rem)/6)] flex-shrink-0">
-                        <Link to={`/series/${s.id}`} className="group block w-full">
+                        <Link to={s.first_episode_id ? `/watch/${s.first_episode_id}` : `/series/${s.id}`} className="group block w-full">
                           <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-2">
                             {(() => {
                               const cover = getSeriesCover(s.id, s.cover_url);
