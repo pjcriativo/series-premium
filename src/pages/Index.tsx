@@ -26,7 +26,26 @@ const Index = () => {
         .eq("user_id", user!.id)
         .order("updated_at", { ascending: false });
       if (error) throw error;
-      return data;
+
+      if (!data || data.length === 0) return [];
+
+      // Buscar episode_id correspondente a cada (series_id, last_episode_number)
+      const seriesIds = data.map((item: any) => item.series_id);
+      const { data: episodeData } = await supabase
+        .from("episodes")
+        .select("id, series_id, episode_number")
+        .in("series_id", seriesIds)
+        .eq("is_published", true);
+
+      // Mapa: "series_id-episode_number" => episode_id
+      const epMap = new Map(
+        (episodeData || []).map((ep: any) => [`${ep.series_id}-${ep.episode_number}`, ep.id])
+      );
+
+      return data.map((item: any) => ({
+        ...item,
+        resume_episode_id: epMap.get(`${item.series_id}-${item.last_episode_number}`) || null,
+      }));
     },
   });
 
@@ -200,8 +219,10 @@ const Index = () => {
                           key={item.series_id}
                           className="w-[calc((100%_-_1rem)/2)] md:w-[calc((100%_-_2rem)/3)] lg:w-[calc((100%_-_5rem)/6)] flex-shrink-0"
                         >
-                          <Link
-                            to={`/series/${item.series.id}`}
+                        <Link
+                            to={item.resume_episode_id
+                              ? `/watch/${item.resume_episode_id}`
+                              : `/series/${item.series.id}`}
                             className="group block w-full transition-transform duration-300 hover:scale-105"
                           >
                             <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-2">
