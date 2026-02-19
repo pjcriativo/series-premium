@@ -1,111 +1,189 @@
 
-# Root Cause: Progress Tracking Does Not Work for YouTube Episodes
+# Upload de Imagem para o Storage no Formulário do Fan Club
 
-## Diagnosis
+## Situação Atual
 
-All 3 published episodes use `youtube_url` (YouTube iframe embed), **not** `video_url` (MP4 file). The current player code only saves progress for native `<video>` elements:
+O campo de imagem no `NewPostForm` (`src/pages/admin/FanClubManager.tsx`) é um simples `<Input>` de texto para colar uma URL externa:
 
-- `saveProgress()` is called by `onTimeUpdate`, the auto-save timer (`setInterval`), and `onUnmount` — all of which are wired to `videoRef.current` (the `<video>` tag).
-- When `youtubeId` is present, the player renders an `<iframe>`. The `videoRef` is never attached, so **none of the save-progress calls ever fire**.
-- Because `user_progress` is never written, the "Continue Assistindo" section never appears and no progress bar is shown.
+```tsx
+<Input
+  placeholder="https://…"
+  value={form.image_url}
+  onChange={(e) => setForm((f) => ({ ...f, image_url: e.target.value }))}
+/>
+```
 
-## Fix: YouTube IFrame API Progress Tracking
+Isso é frágil — URLs externas podem sair do ar, e o processo de copiar/colar é trabalhoso para o admin.
 
-The YouTube IFrame Player API allows injecting a JS player via `postMessage` and listening to time updates via the `onStateChange` / `getCurrentTime()` API. The plan is to add a YouTube player wrapper that:
+## Solução
 
-1. Loads the YouTube IFrame API script once.
-2. Creates a `YT.Player` instance pointed at the episode's `youtubeId`.
-3. Polls `player.getCurrentTime()` every 5 seconds (same cadence as the native player) and calls `saveProgress`.
-4. On unmount, saves the last known position.
+Substituir o campo de URL por um seletor de arquivo nativo (`<input type="file">`), com:
 
-### Files to Change
+- Preview da imagem selecionada antes de publicar
+- Upload para o bucket `covers` do Supabase Storage (já público, já usado pelas capas de séries)
+- Botão de remoção da imagem selecionada
+- Indicador de progresso de upload (texto "Enviando…" no botão Publicar)
 
-| File | Change |
-|---|---|
-| `src/hooks/useEpisodePlayer.ts` | Add `youtubeCurrentTime` ref + `saveProgress` integration for YouTube via a polling interval when `youtubeId` is present |
-| `src/pages/EpisodePlayer.tsx` | Replace plain `<iframe>` with a `<div id>` target so the YT IFrame API can attach; set up `onReady` / `onStateChange` callbacks |
+O padrão de upload já existe no `SeriesForm.tsx` e será replicado com pequenas adaptações.
 
-### Technical Approach
+## Alterações Técnicas
 
-**1. `useEpisodePlayer.ts` — expose a YouTube player ref and polling**
+### Arquivo único: `src/pages/admin/FanClubManager.tsx`
 
-Add a `ytPlayerRef` (a ref to the `YT.Player` instance) and a `startYTTracking` / `stopYTTracking` pair:
+**1. Estado adicional no `NewPostForm`:**
 
 ```typescript
-const ytPlayerRef = useRef<any>(null);
+const [imageFile, setImageFile] = useState<File | null>(null);
+const [imagePreview, setImagePreview] = useState<string | null>(null);
+const [uploading, setUploading] = useState(false);
+```
 
-// Called from EpisodePlayer once the YT player is ready
-const onYTPlayerReady = (player: any) => {
-  ytPlayerRef.current = player;
+**2. Handler de seleção de arquivo:**
+
+```typescript
+const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0] ?? null;
+  setImageFile(file);
+  setImagePreview(file ? URL.createObjectURL(file) : null);
 };
-
-// Auto-save interval for YouTube (mirrors native video logic)
-useEffect(() => {
-  if (!youtubeId || !user) return;
-  const id = setInterval(() => {
-    if (ytPlayerRef.current) {
-      const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
-      if (t > 0) saveProgress(t);
-    }
-  }, 5000);
-  return () => {
-    clearInterval(id);
-    // save on unmount
-    if (ytPlayerRef.current) {
-      const t = ytPlayerRef.current.getCurrentTime?.() ?? 0;
-      if (t > 0) saveProgress(t);
-    }
-  };
-}, [youtubeId, user, saveProgress]);
 ```
 
-**2. `EpisodePlayer.tsx` — replace `<iframe>` with YT IFrame API player**
-
-Replace the static `<iframe>` embed with a `<div id="yt-player-container">` and load the YT API:
+**3. Função de upload para o bucket `covers`:**
 
 ```typescript
-// One-time load of the YouTube IFrame API script
-useEffect(() => {
-  if (!youtubeId) return;
-  if ((window as any).YT) {
-    initPlayer();
-    return;
-  }
-  const tag = document.createElement("script");
-  tag.src = "https://www.youtube.com/iframe_api";
-  document.head.appendChild(tag);
-  (window as any).onYouTubeIframeAPIReady = initPlayer;
-}, [youtubeId]);
-
-function initPlayer() {
-  new (window as any).YT.Player("yt-player-container", {
-    videoId: youtubeId,
-    playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
-    events: {
-      onReady: (e: any) => {
-        onYTPlayerReady(e.target);
-        // Restore progress if available
-        if (savedProgress?.last_position_seconds > 0 &&
-            savedProgress.last_episode_number === episode?.episode_number) {
-          e.target.seekTo(savedProgress.last_position_seconds, true);
-        }
-      },
-    },
-  });
-}
+const uploadImage = async (file: File): Promise<string> => {
+  const ext = file.name.split(".").pop();
+  const path = `fan-club/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("covers").upload(path, file);
+  if (error) throw error;
+  return supabase.storage.from("covers").getPublicUrl(path).data.publicUrl;
+};
 ```
 
-The `<div id="yt-player-container">` replaces the `<iframe>` and fills the same container space. The YT API converts it into an `<iframe>` automatically.
+As imagens do Fan Club ficam em uma subpasta `fan-club/` dentro do bucket `covers`, separadas das capas de séries.
 
-### What This Enables
+**4. Integração na `mutationFn`:**
 
-- `saveProgress` is called every 5 seconds for YouTube episodes, same as MP4 episodes.
-- On unmount (navigating away), the last position is saved.
-- The "Continue Assistindo" section on the Home page will now appear after watching a YouTube episode.
-- The progress bar will display correctly using `last_position_seconds / duration_seconds` (60s as set in the DB).
+```typescript
+mutationFn: async (data: PostFormData) => {
+  setUploading(true);
+  let image_url: string | null = null;
+  if (imageFile) {
+    image_url = await uploadImage(imageFile);
+  }
+  setUploading(false);
+  const { error } = await supabase.from("fan_club_posts").insert({
+    author_id: user!.id,
+    title: data.title.trim(),
+    body: data.body.trim(),
+    image_url,
+    post_type: data.post_type,
+  });
+  if (error) throw error;
+},
+```
 
-### What Is NOT Changed
-- The `saveProgress` function itself — no changes needed there.
-- All MP4 native video logic — unchanged.
-- Database schema — no migrations needed.
-- All other pages and components.
+**5. Limpar estado após publicar:**
+
+```typescript
+onSuccess: () => {
+  toast({ title: "Post publicado!" });
+  setForm(EMPTY_FORM);
+  setImageFile(null);
+  setImagePreview(null);
+  onCreated();
+},
+```
+
+**6. UI do campo de imagem (substitui o Input de URL):**
+
+```tsx
+<div className="col-span-2 space-y-1.5">
+  <Label>
+    Imagem <span className="text-muted-foreground font-normal">(opcional)</span>
+  </Label>
+
+  {/* Preview */}
+  {imagePreview && (
+    <div className="relative w-full">
+      <img
+        src={imagePreview}
+        alt="Preview"
+        className="w-full max-h-48 object-cover rounded-lg"
+      />
+      <button
+        type="button"
+        onClick={() => { setImageFile(null); setImagePreview(null); }}
+        className="absolute top-2 right-2 bg-black/60 rounded-full p-1 text-white hover:bg-destructive transition-colors"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )}
+
+  {/* File input */}
+  {!imagePreview && (
+    <label className="flex items-center gap-2 cursor-pointer border border-dashed border-border rounded-lg p-4 hover:bg-accent/50 transition-colors">
+      <ImageIcon className="h-4 w-4 text-muted-foreground" />
+      <span className="text-sm text-muted-foreground">
+        Clique para selecionar uma imagem
+      </span>
+      <input
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageChange}
+      />
+    </label>
+  )}
+</div>
+```
+
+**7. Botão Publicar com estado de upload:**
+
+```tsx
+<Button disabled={!isValid || createPost.isPending || uploading} ...>
+  {uploading ? "Enviando imagem…" : createPost.isPending ? "Publicando…" : (
+    <><Plus className="h-4 w-4" />Publicar</>
+  )}
+</Button>
+```
+
+**8. Novos imports:**
+
+```typescript
+import { ImageIcon, X } from "lucide-react"; // adicionar X e ImageIcon
+```
+
+## Fluxo Completo
+
+```text
+Admin seleciona arquivo  →  Preview local (URL.createObjectURL)
+                         →  Clica "Publicar"
+                         →  Upload para covers/fan-club/{uuid}.ext
+                         →  Supabase retorna URL pública
+                         →  INSERT em fan_club_posts com image_url
+                         →  Post aparece no feed do Fan Club com imagem
+```
+
+## O que NÃO muda
+
+- Nenhuma migração de banco necessária — `image_url` já é `text nullable`
+- Nenhuma mudança no bucket (já público, já tem RLS de leitura pública)
+- Nenhuma mudança na página `FanClub.tsx` do usuário
+- A lógica de moderation de comentários permanece intacta
+
+## Possível Problema: RLS de upload no Storage
+
+O bucket `covers` pode ou não ter política de INSERT para admins autenticados. Verificarei se há necessidade de adicionar uma política de Storage RLS para `fan-club/*` para usuários com role `admin`. Se necessário, criarei uma migration adicionando:
+
+```sql
+CREATE POLICY "Admins can upload fan club images"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'covers'
+  AND name LIKE 'fan-club/%'
+  AND has_role(auth.uid(), 'admin'::app_role)
+);
+```
