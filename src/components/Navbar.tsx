@@ -6,6 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import logo from "@/assets/epsodiox-logo.png";
 
 const Navbar = () => {
   const { user, profile } = useAuth();
@@ -27,8 +28,8 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto flex items-center justify-between px-4 md:px-8 py-3">
       {/* Left: Logo + Nav Links (desktop only) */}
       <div className="flex items-center gap-6">
-        <Link to="/" className="text-xl font-black tracking-tight text-primary">
-          ReelShort
+        <Link to="/" className="flex items-center">
+          <img src={logo} alt="Epsodiox" className="h-8 w-auto" />
         </Link>
         <div className="hidden md:flex items-center gap-4">
           <Link to="/" className="text-sm font-medium text-foreground hover:text-primary transition-colors">

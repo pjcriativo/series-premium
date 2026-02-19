@@ -13,7 +13,7 @@ const Brand = () => {
             <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-primary/20 mb-4">
               <Sparkles className="h-8 w-8 text-primary" />
             </div>
-            <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">Marca & Parcerias</h1>
+          <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">Marca & Parcerias</h1>
             <p className="text-muted-foreground text-lg max-w-lg mx-auto">
               Alcance milhões de espectadores engajados com conteúdo nativo integrado às nossas séries.
             </p>
@@ -34,7 +34,7 @@ const Brand = () => {
           </div>
 
           <div className="text-center">
-            <Button size="lg" className="font-bold text-base px-8 gap-2" onClick={() => window.location.href = "mailto:contato@reelshort.com"}>
+          <Button size="lg" className="font-bold text-base px-8 gap-2" onClick={() => window.location.href = "mailto:contato@epsodiox.com"}>
               <Mail className="h-5 w-5" />
               Fale Conosco
             </Button>
