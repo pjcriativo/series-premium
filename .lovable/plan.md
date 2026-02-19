@@ -1,86 +1,59 @@
 
-# Atualização Automática de `total_episodes` ao Salvar Episódio
+# Adicionar Botão "Sair" no HoverCard do Perfil (Navbar)
 
-## Contexto
+## Problema
 
-O campo `total_episodes` na tabela `series` representa quantos episódios a série possui. Atualmente ele é um campo manual no formulário de série — o admin precisa atualizar esse número manualmente toda vez que adiciona ou edita um episódio. Isso é propenso a erro e inconsistência.
+O HoverCard do avatar na Navbar (desktop) exibe nome, saldo de moedas, botão "Completar" e "Painel Admin" para admins — mas **não tem opção de Sair**. O usuário precisa de uma forma de fazer logout diretamente por esse menu.
 
-## Objetivo
+## Solução
 
-Após salvar (criar ou editar) um episódio com sucesso em `EpisodeForm.tsx`, buscar automaticamente no banco qual é o **maior `episode_number`** cadastrado para aquela série e atualizar o campo `total_episodes` da série com esse valor.
-
-## Por Que o Maior `episode_number`?
-
-Essa é a lógica já documentada na arquitetura do projeto (`business-logic/series-automation`): o `total_episodes` deve refletir o maior número de episódio cadastrado, não a contagem de linhas. Isso garante consistência mesmo se episódios forem deletados ou tiverem números não sequenciais.
-
-**Exemplo:**
-- Série tem episódios: #1, #2, #3, #5 → `total_episodes = 5`
-- Se o admin cadastrar o episódio #6 → `total_episodes` vira `6` automaticamente
-
-## Fluxo da Atualização
-
-```text
-Admin clica "Salvar" no EpisodeForm
-         ↓
-1. Verifica duplicata de episode_number
-         ↓
-2. Faz upload do vídeo (se houver)
-         ↓
-3. Salva/atualiza o episódio no banco
-         ↓
-4. [NOVO] Busca MAX(episode_number) para form.series_id
-         ↓
-5. [NOVO] Atualiza series.total_episodes com o valor encontrado
-         ↓
-6. Invalida queries e navega para /admin/episodes
-```
+Adicionar um botão "Sair" com ícone `LogOut` ao final do HoverCard, logo abaixo do botão "Painel Admin" (ou abaixo de "Completar" para não-admins).
 
 ## Mudança Técnica
 
-### Arquivo: `src/pages/admin/EpisodeForm.tsx`
+### Arquivo: `src/components/Navbar.tsx`
 
-Dentro do `handleSubmit`, após o `insert` ou `update` do episódio ter sucesso (linha 151), adicionar dois passos antes do `invalidateQueries`:
-
+**1. Adicionar import de `LogOut` ao lucide-react** (já importa `Coins` e `ShieldCheck`):
 ```typescript
-// 1. Buscar o maior episode_number da série
-const { data: maxEpData } = await supabase
-  .from("episodes")
-  .select("episode_number")
-  .eq("series_id", form.series_id)
-  .order("episode_number", { ascending: false })
-  .limit(1)
-  .maybeSingle();
-
-// 2. Atualizar total_episodes da série
-if (maxEpData) {
-  await supabase
-    .from("series")
-    .update({ total_episodes: maxEpData.episode_number })
-    .eq("id", form.series_id);
-}
+import { Coins, ShieldCheck, LogOut } from "lucide-react";
 ```
 
-Após isso, invalidar também a query de séries para que o gerenciador de séries reflita o novo total:
-
+**2. Obter a função `signOut` do hook `useAuth`** (já desestrutura `user`, `profile`, `isAdmin`):
 ```typescript
-queryClient.invalidateQueries({ queryKey: ["admin-episodes"] });
-queryClient.invalidateQueries({ queryKey: ["admin-series"] });        // ← NOVO
-queryClient.invalidateQueries({ queryKey: ["admin-series-list"] });   // ← NOVO
+const { user, profile, isAdmin, signOut } = useAuth();
 ```
 
-## Impacto
+**3. Adicionar o botão "Sair" no HoverCard, após o bloco do Painel Admin:**
+```tsx
+<button
+  onClick={signOut}
+  className="mt-2 w-full flex items-center justify-center gap-1.5 h-9 text-sm font-medium text-muted-foreground hover:text-destructive transition-colors"
+>
+  <LogOut className="h-4 w-4" />
+  Sair
+</button>
+```
 
-| Situação | Comportamento |
-|---|---|
-| Admin cria episódio #7 em série com total=5 | `total_episodes` vira 7 automaticamente |
-| Admin edita episódio #3 (sem mudar o número) | `total_episodes` permanece correto (rebusca o max) |
-| Admin edita episódio e muda de #7 para #8 | `total_episodes` vira 8 automaticamente |
-| Série ainda sem episódios | Nenhuma atualização (guard com `if (maxEpData)`) |
+## Resultado Visual
 
-## Arquivos Alterados
+```
+┌─────────────────────────────┐
+│ [M] Marcos Gonçalves        │
+│      UID 8d7a5411...        │
+├─────────────────────────────┤
+│  🪙 100 Moedas  🪙 0 Bônus  │
+├─────────────────────────────┤
+│  [    Completar           ] │
+│  [🛡  Painel Admin        ] │  ← só para admins
+│  [↩  Sair                ] │  ← NOVO
+└─────────────────────────────┘
+```
 
-Apenas **`src/pages/admin/EpisodeForm.tsx`**:
-- Adicionar 2 chamadas ao Supabase após salvar o episódio (busca do max e update da série)
-- Adicionar invalidação das queries `admin-series` e `admin-series-list`
+## Arquivo Alterado
 
-Nenhuma alteração de banco de dados necessária — o campo `total_episodes` já existe na tabela `series` e admins têm permissão de UPDATE.
+Apenas **`src/components/Navbar.tsx`**:
+- Adicionar `LogOut` ao import do `lucide-react`
+- Adicionar `signOut` ao destructuring do `useAuth()`
+- Adicionar botão "Sair" ao final do `HoverCardContent`
+
+Nenhuma alteração de banco de dados necessária.
