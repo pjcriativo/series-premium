@@ -39,6 +39,7 @@ const SeriesForm = () => {
   const { toast } = useToast();
   const [form, setForm] = useState<FormData>(emptyForm);
   const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverWarning, setCoverWarning] = useState<string | null>(null);
 
   const { data: categories } = useQuery({
     queryKey: ["admin-categories"],
@@ -98,34 +99,18 @@ const SeriesForm = () => {
         is_published: formData.is_published,
       };
 
-      let savedId: string;
-
       if (id) {
         const { error } = await supabase.from("series").update(payload).eq("id", id);
         if (error) throw error;
-        savedId = id;
       } else {
-        const { data, error } = await supabase.from("series").insert(payload).select("id").single();
+        const { error } = await supabase.from("series").insert(payload);
         if (error) throw error;
-        savedId = data.id;
-      }
-
-      // Auto-update total_episodes from actual episodes
-      const { data: maxEp } = await supabase
-        .from("episodes")
-        .select("episode_number")
-        .eq("series_id", savedId)
-        .order("episode_number", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (maxEp && maxEp.episode_number > formData.total_episodes) {
-        await supabase.from("series").update({ total_episodes: maxEp.episode_number }).eq("id", savedId);
       }
     },
     onSuccess: () => {
       console.log("[SERIES_FORM] saved ok");
       queryClient.invalidateQueries({ queryKey: ["admin-series"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-series-detail"] });
       toast({ title: id ? "Série atualizada" : "Série criada" });
       navigate("/admin/series");
     },
@@ -209,7 +194,22 @@ const SeriesForm = () => {
           {form.cover_url && !coverFile && (
             <img src={form.cover_url} alt="Capa atual" className="h-24 w-auto rounded-md object-cover mb-2" />
           )}
-          <Input type="file" accept="image/*" onChange={(e) => setCoverFile(e.target.files?.[0] ?? null)} />
+          <Input
+            type="file"
+            accept="image/*"
+            onChange={(e) => {
+              const file = e.target.files?.[0] ?? null;
+              setCoverFile(file);
+              if (file && file.size > 5 * 1024 * 1024) {
+                setCoverWarning("⚠️ Imagem grande (acima de 5 MB). O upload pode demorar mais. Considere usar uma imagem menor.");
+              } else {
+                setCoverWarning(null);
+              }
+            }}
+          />
+          {coverWarning && (
+            <p className="text-sm text-destructive">{coverWarning}</p>
+          )}
         </div>
 
         <Button type="submit" className="w-full" disabled={saveMutation.isPending}>
