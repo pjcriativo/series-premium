@@ -23,6 +23,14 @@ export const useEpisodePlayer = () => {
   const [showPaywall, setShowPaywall] = useState(false);
   const [autoUnlocking, setAutoUnlocking] = useState(false);
 
+  // Reset player state when episode changes
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setIsPlaying(false);
+    setShowEndScreen(false);
+  }, [episodeId]);
+
   // Fetch episode with series info
   const { data: episode, isLoading: epLoading } = useQuery({
     queryKey: ["episode", episodeId],

@@ -146,17 +146,20 @@ const EpisodePlayer = () => {
               </Link>
               {youtubeId ? (
                 <div
+                  key={youtubeId}
                   ref={ytContainerRef}
                   className="w-full h-full"
                 />
               ) : videoUrl ? (
                 <>
                   <video
+                    key={episode?.id}
                     ref={videoRef}
                     src={videoUrl}
                     className="h-full w-full object-contain"
                     muted={isMuted}
                     playsInline
+                    autoPlay
                     onClick={togglePlay}
                     onTimeUpdate={handleTimeUpdate}
                     onLoadedMetadata={() => {
