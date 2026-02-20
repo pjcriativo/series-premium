@@ -1,13 +1,18 @@
-import { ArrowLeft, Coins, Sparkles, Zap, Crown, Gem } from "lucide-react";
+import { ArrowLeft, Coins, Sparkles, Zap, Crown, Gem, CreditCard } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
 import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 const iconMap: Record<string, any> = {
   Starter: Zap,
@@ -25,8 +30,7 @@ const colorMap: Record<string, string> = {
 
 const CoinStore = () => {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-  const [buying, setBuying] = useState<string | null>(null);
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
   const { data: wallet } = useQuery({
     queryKey: ["wallet", user?.id],
@@ -50,30 +54,6 @@ const CoinStore = () => {
     },
   });
 
-  const handleBuy = async (packageId: string) => {
-    if (!user) return;
-    setBuying(packageId);
-    try {
-      const { data, error } = await supabase.functions.invoke("buy-coins", {
-        body: { package_id: packageId },
-      });
-      if (error) throw error;
-      if (data.error) {
-        toast({ title: "Erro", description: data.error, variant: "destructive" });
-      } else {
-        toast({
-          title: "Moedas adicionadas! 🎉",
-          description: `+${data.coins_added} moedas. Novo saldo: ${data.new_balance}`,
-        });
-        queryClient.invalidateQueries({ queryKey: ["wallet"] });
-      }
-    } catch (err: any) {
-      toast({ title: "Erro", description: err.message, variant: "destructive" });
-    } finally {
-      setBuying(null);
-    }
-  };
-
   const formatBRL = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   return (
@@ -95,6 +75,17 @@ const CoinStore = () => {
           </div>
         </div>
 
+        {/* Coming soon notice */}
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 mb-5 flex items-start gap-3">
+          <CreditCard className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-foreground">Pagamento em configuração</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Em breve você poderá comprar moedas com Stripe, PIX e cartão de crédito.
+            </p>
+          </div>
+        </div>
+
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Escolha um pacote</h2>
         <div className="grid grid-cols-2 gap-3">
           {(packages ?? []).map((pkg) => {
@@ -104,9 +95,8 @@ const CoinStore = () => {
             return (
               <button
                 key={pkg.id}
-                onClick={() => handleBuy(pkg.id)}
-                disabled={buying !== null}
-                className={`relative rounded-xl border border-border bg-card p-4 flex flex-col items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 ${isPopular ? "ring-2 ring-primary" : ""}`}
+                onClick={() => setShowComingSoon(true)}
+                className={`relative rounded-xl border border-border bg-card p-4 flex flex-col items-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] ${isPopular ? "ring-2 ring-primary" : ""}`}
               >
                 {isPopular && (
                   <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-bold uppercase bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Popular</span>
@@ -117,14 +107,51 @@ const CoinStore = () => {
                 <span className="text-lg font-black text-foreground">{pkg.coins}</span>
                 <span className="text-xs text-muted-foreground">moedas</span>
                 <span className="text-xs font-semibold text-foreground mt-1">{formatBRL(pkg.price_cents)}</span>
-                {buying === pkg.id && <span className="text-[10px] text-primary animate-pulse">Processando...</span>}
               </button>
             );
           })}
         </div>
 
-        <p className="text-xs text-muted-foreground text-center mt-6">As moedas são creditadas instantaneamente na sua conta.</p>
+        <p className="text-xs text-muted-foreground text-center mt-6">
+          Os pacotes de moedas estarão disponíveis em breve.
+        </p>
       </main>
+
+      {/* Coming Soon Dialog */}
+      <Dialog open={showComingSoon} onOpenChange={setShowComingSoon}>
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <div className="flex justify-center mb-3">
+              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <CreditCard className="h-8 w-8 text-primary" />
+              </div>
+            </div>
+            <DialogTitle className="text-xl font-bold text-foreground">
+              Pagamento em breve
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground mt-1">
+            O sistema de compra de moedas está sendo configurado.
+          </p>
+          <div className="mt-4 rounded-lg bg-muted/50 border border-border p-4 text-left space-y-2">
+            <p className="text-xs font-semibold text-foreground mb-2">Em breve você poderá pagar com:</p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="text-primary">✓</span> Cartão de crédito via Stripe
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="text-primary">✓</span> PIX
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="text-primary">✓</span> Google Pay
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mt-3 font-medium">Aguarde a liberação! 🚀</p>
+          <Button className="w-full mt-4" onClick={() => setShowComingSoon(false)}>
+            Fechar
+          </Button>
+        </DialogContent>
+      </Dialog>
+
       <BottomNav />
     </div>
   );
