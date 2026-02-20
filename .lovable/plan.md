@@ -1,115 +1,159 @@
 
-# Corrigir Tela Preta: Skeleton Durante Fetch da URL Assinada
+# Correção Definitiva: Tela Preta ao Trocar de Episódio (YouTube)
 
-## Causa Raiz Real do Bug (Diagnóstico Atualizado)
+## Diagnóstico Final — 3 Bugs Reais Identificados
 
-O fix anterior (`key` no `<video>`) resolve a reutilização do elemento, mas **não resolve o timing**. O fluxo atual após trocar de episódio é:
+### Bug 1: YouTube player antigo não é destruído antes do novo ser criado
 
-```
-episodeId muda
-    ↓
-epLoading=true, accessLoading=true → isLoading=true → skeleton exibido ✓
-    ↓
-epLoading=false, accessLoading=false → isLoading=false → skeleton REMOVIDO
-    ↓
-videoUrl ainda é undefined (query ainda buscando URL assinada) ← PROBLEMA
-    ↓
-<video key={episode?.id} src={undefined}> monta → tela PRETA
-    ↓
-Alguns segundos depois: videoUrl resolve → src muda → mas key NÃO muda
-    ↓
-React não recria o <video> (key é o mesmo) → browser fica com tela preta
-    ↓
-Usuário precisa atualizar a página 2x para ver o vídeo
-```
+O `useEffect` no `EpisodePlayer.tsx` tem `[youtubeId]` como dependência. Quando o usuário troca de episódio:
 
-**O bug em código** (`EpisodePlayer.tsx`, linha 88):
+- A função de cleanup do `useEffect` **não destrói o player** (`ytPlayerRef.current`)
+- O player antigo continua existindo em memória e tentando enviar `postMessage` para o iframe que já foi removido do DOM
+- Isso causa o erro: `Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://www.youtube.com') does not match the recipient window's origin ('https://www.epsodiox.com')`
+
+**Fix**: Adicionar `return () => { ytPlayerRef.current?.destroy?.(); ytPlayerRef.current = null; }` no `useEffect` do YouTube.
+
+### Bug 2: `navigateWithTransition` usa `setTimeout` que conflita com o ciclo de vida do React
+
+A função atual:
 ```typescript
-const isLoading = epLoading || accessLoading;
-// ↑ NÃO inclui "videoUrl está carregando"
+const navigateWithTransition = useCallback((path: string) => {
+  setIsTransitioning(true);
+  setTimeout(() => navigate(path), 200); // ← navega 200ms depois
+}, [navigate]);
 ```
 
-E na linha 153:
-```tsx
-} : videoUrl ? (
-  // ← só renderiza o <video> quando videoUrl existe
-  // mas quando videoUrl=undefined, renderiza o fallback "Vídeo não disponível"
-  // e quando videoUrl depois chega, o key={episode?.id} NÃO muda → sem recriação
-```
+O problema: durante esses 200ms, o player antigo ainda está montado **com o `isTransitioning=true`** mostrando o skeleton. Quando o `navigate()` finalmente executa, o React tenta remontar — mas o player do YouTube (se ambos os episódios forem YouTube) não reconhece a mudança do `key={youtubeId}` porque o `youtubeId` novo ainda não foi buscado. O `key` não mudou, então o YouTube container **não é recriado**.
 
-## Solução
+**Fix**: Remover o `setTimeout` e navegar diretamente, usando apenas o React Query + loading states para mostrar o skeleton. A transição de fade pode ser mantida com CSS mas sem delay no `navigate`.
 
-### Parte 1 — Exportar `videoUrlLoading` do hook
+### Bug 3: `key={youtubeId}` não garante remontagem se ambos os episódios têm YouTube
 
-No `useEpisodePlayer.ts`, a query de URL assinada precisa expor seu estado de loading:
+Se o episódio A tem `youtubeId = "abc123"` e episódio B tem `youtubeId = "xyz789"`, a `key` muda → funciona.
 
-```typescript
-const { data: videoUrl, isLoading: videoUrlLoading } = useQuery({
-  queryKey: ["video-url", episode?.video_url],
-  ...
-  enabled: !!episode?.video_url && hasAccess === true && !youtubeId,
-});
-```
+Mas se o componente monta com o `youtubeId` antigo porque o `episode` ainda não foi buscado (`epLoading=true`), o `key` do container ainda é o `youtubeId` antigo. Quando o `episode` novo chega, o `youtubeId` muda → **o container é recriado** — mas o `useEffect` que inicializa o YT.Player tem `[youtubeId]` como dependência e vai tentar reinicializar. Porém a limpeza do player antigo não acontece porque o `useEffect` cleanup roda com o novo `youtubeId`.
 
-Retornar `videoUrlLoading` no objeto de retorno do hook.
+**Fix combinado**: Usar `episodeId` (não `youtubeId`) como `key` do container YouTube + destruir o player antigo no cleanup.
 
-### Parte 2 — Incluir `videoUrlLoading` no estado de loading da UI
+## Solução Completa
 
-No `EpisodePlayer.tsx`:
-
-```typescript
-const {
-  // ... outros campos
-  videoUrlLoading,
-} = useEpisodePlayer();
-
-// Mostrar skeleton enquanto qualquer dado essencial está carregando
-// Para YouTube: não há videoUrlLoading (youtubeId está disponível direto do episode)
-// Para vídeo nativo: aguardar videoUrl
-const isLoading = epLoading || accessLoading || 
-  (!youtubeId && !!episode?.video_url && videoUrlLoading);
-```
-
-Dessa forma, o skeleton permanece visível até a URL assinada estar disponível, e quando o `<video>` montar pela primeira vez, já terá `src={videoUrl}` com a URL correta — sem tela preta.
-
-### Parte 3 — Usar `videoUrl` como parte da `key` do `<video>`
-
-Para garantir que o `<video>` seja recriado quando a URL assinada mudar (troca de episódio + nova URL):
+### Mudança 1 — `src/pages/EpisodePlayer.tsx`: Destruir player e usar `key={episodeId}`
 
 ```tsx
-<video
-  key={`${episode?.id}-${videoUrl}`}
-  ref={videoRef}
-  src={videoUrl}
+// useEffect YouTube: adicionar cleanup com destroy
+useEffect(() => {
+  if (!youtubeId) return;
+
+  const initPlayer = () => { ... };
+
+  // ... mesma lógica de init
+
+  // NOVO: cleanup que destrói o player
+  return () => {
+    try {
+      if (ytPlayerRef.current) {
+        ytPlayerRef.current.destroy();
+        ytPlayerRef.current = null;
+      }
+    } catch (_) {}
+  };
+}, [youtubeId]); // ← continua dependendo de youtubeId
+```
+
+```tsx
+// Container YouTube: key baseado em episodeId (não youtubeId)
+{youtubeId ? (
+  <div
+    key={episodeId}  // ← muda toda vez que o episódio muda
+    ref={ytContainerRef}
+    className="w-full h-full"
+  />
+) : ...}
+```
+
+### Mudança 2 — `src/pages/EpisodePlayer.tsx`: Remover `setTimeout` do `navigateWithTransition`
+
+```typescript
+// ANTES (com bug):
+const navigateWithTransition = useCallback((path: string) => {
+  setIsTransitioning(true);
+  setTimeout(() => navigate(path), 200); // ← delay problemático
+}, [navigate]);
+
+// DEPOIS (sem bug):
+const navigateWithTransition = useCallback((path: string) => {
+  navigate(path); // navega imediato, skeleton é controlado pelo isLoading do hook
+}, [navigate]);
+```
+
+O skeleton já existe e é controlado por `isLoading = epLoading || accessLoading || videoUrlLoading`. Não é necessário o `setTimeout` — o feedback visual já está garantido pelo React Query loading states.
+
+### Mudança 3 — `src/pages/EpisodePlayer.tsx`: Remover `isTransitioning` do render
+
+Com o `setTimeout` removido, o `isTransitioning` não é mais necessário. A condição no JSX:
+
+```tsx
+// REMOVER:
+{isTransitioning ? (
+  <Skeleton className="w-full h-full rounded-none" />
+) : youtubeId ? (
+```
+
+Passa a ser simplesmente:
+
+```tsx
+// SIMPLIFICADO:
+{youtubeId ? (
+  <div key={episodeId} ref={ytContainerRef} className="w-full h-full" />
+) : videoUrl ? (
+  <video key={`${episodeId}-${videoUrl}`} ... />
+) : (
   ...
-/>
+)}
 ```
 
-Isso garante: se o `episode?.id` mudar E a nova `videoUrl` já estiver disponível, o elemento é destruído e recriado com a URL correta já no `src`.
+O skeleton de loading já está no bloco `if (isLoading) { return <Skeleton...> }` no topo do componente.
 
-## Diagrama do Fluxo Corrigido
+### Mudança 4 — `src/hooks/useEpisodePlayer.ts`: Expor `episodeId` no retorno
 
+O `episodeId` já existe no hook (via `useParams`) mas não é retornado. Precisamos exportá-lo para o `EpisodePlayer.tsx` usar como `key`:
+
+```typescript
+return {
+  episodeId, // ← NOVO
+  episode, epLoading, ...
+};
 ```
-episodeId muda
-    ↓
-epLoading=true → isLoading=true → skeleton ✓
-    ↓
-epLoading=false, videoUrlLoading=true → isLoading=true → skeleton ✓
-    ↓
-videoUrlLoading=false, videoUrl=https://... → isLoading=false → skeleton remove
-    ↓
-<video key="epId-https://..."  src="https://..."> monta COM src já definido
-    ↓
-autoPlay inicia → vídeo aparece IMEDIATAMENTE
+
+## Fluxo Corrigido
+
+```text
+Usuário clica "Episódio 2"
+         ↓
+navigate("/watch/ep2Id") — imediato, sem delay
+         ↓
+episodeId muda → useEffect cleanup roda → ytPlayer.destroy() ← FIX BUG 1
+         ↓
+epLoading=true → isLoading=true → skeleton exibido
+         ↓
+episode novo chega → youtubeId novo derivado
+         ↓
+key={episodeId} no container mudou → div destruída e recriada ← FIX BUG 3
+         ↓
+useEffect [youtubeId] roda → novo YT.Player criado no mountDiv
+         ↓
+onReady → autoplay inicia → vídeo aparece imediatamente ✓
 ```
 
 ## Arquivos Alterados
 
-### `src/hooks/useEpisodePlayer.ts`
-- Capturar `isLoading: videoUrlLoading` da query de URL assinada
-- Adicionar `videoUrlLoading` ao objeto de retorno do hook
-
 ### `src/pages/EpisodePlayer.tsx`
-- Desestruturar `videoUrlLoading` do hook
-- Atualizar `isLoading` para incluir o estado da URL assinada
-- Atualizar `key` do `<video>` para `${episode?.id}-${videoUrl}` (garante recriação quando URL chega)
+- Adicionar `episodeId` na desestruturação do hook
+- Adicionar cleanup com `ytPlayerRef.current?.destroy()` no `useEffect` do YouTube
+- Trocar `key={youtubeId}` por `key={episodeId}` no container YouTube
+- Remover `navigateWithTransition` com `setTimeout` — navegar direto
+- Remover `isTransitioning` state e a branch do skeleton transitório
+- Remover `isTransitioning` do `cn()` da classe de animação
+
+### `src/hooks/useEpisodePlayer.ts`
+- Adicionar `episodeId` ao objeto de retorno do hook
