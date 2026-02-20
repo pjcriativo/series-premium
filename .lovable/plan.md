@@ -1,52 +1,62 @@
 
-# Correção do Login com Google — Configuração Supabase + Google Cloud
+# Diagnóstico e Guia Completo: Google OAuth com Supabase
 
-## Diagnóstico do Erro
+## O Que os Logs Confirmam
 
-O erro `ERR_CONNECTION_REFUSED` com `localhost` acontece porque:
+Os logs do Supabase mostram que o Google OAuth **já funciona tecnicamente**. O usuário `pjcriativoweb@gmail.com` fez login com sucesso (status 302) às 15h47 de hoje. Porém o `referer` era `http://localhost:3000`, o que indica que:
 
-1. O usuário clica em "Continuar com Google" na produção (`https://www.epsodiox.com`)
-2. O Google autentica o usuário com sucesso
-3. O Google tenta redirecionar para a callback URL registrada no Google Cloud Console
-4. A callback URL registrada no Google Cloud aponta para `localhost` (ambiente de desenvolvimento), **não para a URL de produção**
-5. O browser tenta acessar `localhost` e falha com `ERR_CONNECTION_REFUSED`
+- O fluxo está sendo iniciado a partir do localhost
+- Mas o site de produção é `https://www.epsodiox.com`
 
-**O código está correto.** `redirectTo: window.location.origin` é a implementação certa — ele usa a URL atual do browser automaticamente. O problema é exclusivamente de configuração externa.
+O erro `ERR_CONNECTION_REFUSED` ocorre porque depois do Google redirecionar para o Supabase, o Supabase tenta redirecionar de volta para `http://localhost:3000` — e essa URL não está acessível na máquina do usuário final.
 
-## O Que Precisa Ser Configurado
+## Resultado das Verificacoes
 
-### Parte 1 — Google Cloud Console
+### Codigo React — APROVADO
 
-Você precisa adicionar as URLs corretas no seu projeto OAuth no Google Cloud.
+O codigo em `src/hooks/useAuth.tsx` esta correto:
 
-**Onde acessar:** https://console.cloud.google.com → APIs & Services → Credentials → seu OAuth 2.0 Client ID
+```typescript
+const signInWithGoogle = async () => {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin, // usa a URL atual do browser
+    },
+  });
+  if (error) throw error;
+};
+```
 
-**Na seção "Authorized JavaScript origins", adicione:**
+O `window.location.origin` retorna automaticamente:
+- Em producao: `https://www.epsodiox.com`
+- No preview Lovable: `https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app`
+- Em dev local: `http://localhost:5173`
+
+Nao e necessaria nenhuma mudanca de codigo.
+
+### Componente de Login — APROVADO
+
+O `src/pages/Auth.tsx` ja implementa o botao de Google corretamente com tratamento de erro via toast. O logout tambem funciona via `signOut()` no `useAuth`.
+
+### Protecao de Rotas — APROVADO
+
+O `ProtectedRoute` e o `AdminRoute` ja estao implementados corretamente em `src/App.tsx`.
+
+## O Que Precisa Ser Configurado (Configuracao Externa)
+
+Nao ha nenhuma mudanca de codigo. Apenas configuracoes em dois paineis externos.
+
+### Configuracao 1 — Supabase Dashboard
+
+Acesse: Authentication → URL Configuration
+
+**Site URL** — deve ser:
 ```
 https://www.epsodiox.com
-https://epsodiox.com
 ```
 
-**Na seção "Authorized redirect URIs", adicione:**
-```
-https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
-```
-
-Esta é a URL mais importante — é para ela que o Google envia o usuário após autenticar. O Supabase então processa o token e redireciona para o seu site.
-
-**Remova ou mantenha separado o localhost:**
-- Se você usa `localhost` para desenvolvimento local, pode mantê-lo, mas certifique-se que as URLs de produção também estão adicionadas.
-
-### Parte 2 — Supabase Dashboard (URL Configuration)
-
-**Onde acessar:** https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/url-configuration
-
-**Site URL** (campo principal):
-```
-https://www.epsodiox.com
-```
-
-**Additional Redirect URLs** (lista de URLs permitidas):
+**Additional Redirect URLs** — deve conter TODAS essas URLs:
 ```
 https://www.epsodiox.com
 https://www.epsodiox.com/**
@@ -54,75 +64,113 @@ https://epsodiox.com
 https://epsodiox.com/**
 https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app
 https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app/**
+http://localhost:5173
+http://localhost:5173/**
+http://localhost:3000
+http://localhost:3000/**
 ```
 
-O `**` no final é importante — permite que qualquer subrota (como `/`, `/auth`, etc.) seja aceita como destino do redirect.
+O `/**` permite qualquer subrota como `/`, `/auth`, `/admin`, etc.
 
-### Parte 3 — Verificar Provider Google no Supabase
+### Configuracao 2 — Google Cloud Console
 
-**Onde acessar:** https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/providers
+Acesse: APIs & Services → Credentials → seu OAuth 2.0 Client ID
 
-Confirmar que:
-- O provider **Google** está habilitado (toggle ligado)
-- O **Client ID** e **Client Secret** do Google Cloud estão preenchidos corretamente
-
-## Análise do Código Atual
-
-O código de autenticação está implementado corretamente seguindo as boas práticas:
-
-**`src/hooks/useAuth.tsx` — signInWithGoogle:**
-```typescript
-const signInWithGoogle = async () => {
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: window.location.origin, // correto: usa a URL atual do browser
-    },
-  });
-  if (error) throw error;
-};
+**Authorized JavaScript origins** — adicione:
+```
+https://www.epsodiox.com
+https://epsodiox.com
+http://localhost:5173
+http://localhost:3000
 ```
 
-**O listener `onAuthStateChange` está correto** — configurado antes de `getSession()`, detecta `SIGNED_IN` após o redirect do Google e atualiza o estado automaticamente.
+**Authorized redirect URIs** — deve conter EXATAMENTE:
+```
+https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
+```
 
-**Não é necessária nenhuma mudança de código** para o Google OAuth funcionar — apenas as configurações externas acima.
+Esta e a unica URI de callback que o Google precisa. O Supabase processa o token e depois redireciona para o seu site usando as URLs da lista acima.
 
-## Fluxo Completo do OAuth (Para Referência)
+**IMPORTANTE:** Nao adicione `https://www.epsodiox.com/auth/v1/callback` no Google Cloud — essa URL nao existe no seu projeto. A unica callback do Google deve ser a do Supabase.
+
+### Configuracao 3 — Supabase Provider Google
+
+Acesse: Authentication → Providers → Google
+
+Verifique:
+- Toggle **Enabled** ligado
+- **Client ID** preenchido com o valor do Google Cloud Console
+- **Client Secret** preenchido com o valor do Google Cloud Console
+
+## Fluxo OAuth Completo
 
 ```text
-1. Usuário clica "Continuar com Google" em https://www.epsodiox.com
-         ↓
-2. signInWithOAuth({ provider: "google", redirectTo: "https://www.epsodiox.com" })
-         ↓
-3. Supabase redireciona para accounts.google.com com os parâmetros OAuth
-         ↓
-4. Usuário autoriza no Google
-         ↓
-5. Google redireciona para: https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
-   (esta URL DEVE estar no Google Cloud Console como "Authorized redirect URI")
-         ↓
-6. Supabase processa o token, cria/atualiza o usuário
-         ↓
-7. Supabase redireciona para: https://www.epsodiox.com
-   (esta URL DEVE estar nas "Additional Redirect URLs" do Supabase)
-         ↓
-8. onAuthStateChange dispara com evento SIGNED_IN
-         ↓
-9. Usuário é redirecionado para / ou /admin conforme o papel
+Usuario clica "Continuar com Google" em https://www.epsodiox.com
+  |
+  v
+signInWithOAuth({ redirectTo: "https://www.epsodiox.com" })
+  |
+  v
+Supabase redireciona para accounts.google.com
+(com state PKCE armazenado no localStorage de epsodiox.com)
+  |
+  v
+Usuario autoriza no Google
+  |
+  v
+Google redireciona para:
+  https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
+(esta URL DEVE estar no Google Cloud Console)
+  |
+  v
+Supabase valida o token, cria a sessao
+  |
+  v
+Supabase redireciona para: https://www.epsodiox.com
+(esta URL DEVE estar nas Additional Redirect URLs do Supabase)
+  |
+  v
+onAuthStateChange dispara com SIGNED_IN
+  |
+  v
+navigate(isAdmin ? "/admin" : "/")  ✓
 ```
 
-## Checklist de Configuração
+## Por Que o Erro PKCE State Ocorre
 
-- [ ] Google Cloud Console → Authorized JavaScript origins: `https://www.epsodiox.com`
-- [ ] Google Cloud Console → Authorized redirect URIs: `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
-- [ ] Supabase → Site URL: `https://www.epsodiox.com`
+O erro `OAuth state not found or expired` acontece quando:
+- O fluxo e iniciado em `http://localhost:3000`
+- O PKCE state e salvo no `localStorage` do `localhost:3000`
+- Apos autenticar no Google, o Supabase redireciona para `https://www.epsodiox.com`
+- O browser abre `www.epsodiox.com` onde o PKCE state nao existe (e um dominio diferente)
+- O Supabase nao consegue validar o state → erro
+
+**Solucao:** Sempre testar de `https://www.epsodiox.com` diretamente. Nao iniciar o fluxo OAuth a partir do localhost quando o redirect final for para producao.
+
+## Checklist Final
+
+- [ ] Supabase → Site URL = `https://www.epsodiox.com`
 - [ ] Supabase → Additional Redirect URLs inclui `https://www.epsodiox.com/**`
-- [ ] Supabase → Provider Google habilitado com Client ID e Secret corretos
+- [ ] Supabase → Additional Redirect URLs inclui `https://epsodiox.com/**`
+- [ ] Supabase → Additional Redirect URLs inclui a URL do preview Lovable com `/**`
+- [ ] Supabase → Additional Redirect URLs inclui `http://localhost:5173/**`
+- [ ] Supabase → Provider Google habilitado
+- [ ] Supabase → Client ID e Client Secret do Google preenchidos
+- [ ] Google Cloud → Authorized JavaScript origins inclui `https://www.epsodiox.com`
+- [ ] Google Cloud → Authorized redirect URIs inclui `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
+- [ ] Testar SEMPRE a partir da URL correta (nao misturar localhost com producao)
 
-## Nenhuma mudança de código necessária
+## Dicas de Debug
 
-A implementação atual já segue todas as boas práticas:
-- `onAuthStateChange` configurado corretamente no `AuthProvider`
-- `redirectTo: window.location.origin` usa a URL atual dinamicamente
-- `getSession()` recupera sessão existente no carregamento inicial
-- O fluxo de redirecionamento pós-login (`navigate(isAdmin ? "/admin" : "/")`) está correto
+**Como confirmar que funcionou:**
+1. Abra `https://www.epsodiox.com/auth` no browser
+2. Clique em "Continuar com Google"
+3. Voce sera redirecionado para o Google para autorizar
+4. Apos autorizar, voltara para `https://www.epsodiox.com/` logado
+
+**Como verificar nos logs do Supabase:**
+- Acesse Authentication → Logs no dashboard
+- Procure por eventos com `provider: "google"` e `status: 302`
+- Se aparecer `referer: https://www.epsodiox.com` o fluxo esta correto
+
+**Nenhuma mudanca de codigo e necessaria** — a implementacao esta completa e correta.
