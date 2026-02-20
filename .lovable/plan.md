@@ -1,109 +1,129 @@
 
-# Corrigir Upload de Vídeo no Formulário de Episódio
+# Corrigir Tela Preta ao Trocar de Episódio no Player
 
-## Diagnóstico do Problema
+## Causa Raiz do Bug
 
-O upload de vídeo usa `XMLHttpRequest` com `POST` diretamente para a URL raw do Supabase Storage:
+Quando o usuário navega de `/watch/episodeA` para `/watch/episodeB`, o React **reutiliza o mesmo componente `EpisodePlayer`** (pois a rota `/watch/:episodeId` é a mesma). Isso significa:
 
+1. O mesmo elemento `<video>` permanece no DOM
+2. O `src` do vídeo é atualizado via `videoUrl` (que vem de uma query assíncrona)
+3. O browser detecta a mudança de `src`, mas o elemento ainda está no estado anterior (paused/playing)
+4. O resultado: o browser precisa ser notificado explicitamente para reiniciar o carregamento — sem isso, o vídeo fica preto mas o áudio do buffer antigo ainda toca
+
+**Evidência no código atual** (`EpisodePlayer.tsx`, linha 154-178):
+```tsx
+<video
+  ref={videoRef}
+  src={videoUrl}       // ← src muda mas o elemento não é destruído/recriado
+  ...
+/>
 ```
-POST https://pnuydoujbrpfhohsxndz.supabase.co/storage/v1/object/videos/${path}
+
+Quando `videoUrl` muda (nova URL assinada), o browser precisa de um `video.load()` explícito para reiniciar. Sem ele, o comportamento é indefinido — tela preta + áudio do buffer anterior.
+
+## Solução: Forçar Remontagem com `key` prop
+
+A solução mais confiável e alinhada com o padrão React é adicionar `key={episodeId}` no elemento `<video>`. Isso faz o React **destruir e recriar o elemento DOM** cada vez que o episódio muda, garantindo:
+
+- Novo elemento `<video>` limpo, sem estado residual do episódio anterior
+- O browser inicializa o carregamento desde zero
+- Autoplay funciona normalmente na remontagem
+- Zero áudio residual do episódio anterior
+
+```tsx
+<video
+  key={episodeId}      // ← garante destruição/recriação ao trocar de episódio
+  ref={videoRef}
+  src={videoUrl}
+  ...
+/>
 ```
 
-Esse método tem dois problemas críticos:
+Adicionalmente, é preciso resetar os estados locais (`currentTime`, `duration`, `isPlaying`, `showEndScreen`) quando o `episodeId` muda, pois eles ficam com os valores do episódio anterior até que os eventos do novo vídeo os atualizem.
 
-1. **Método HTTP errado**: A API de storage do Supabase para upload requer o envio do arquivo como corpo raw (binary), mas o endpoint `POST /storage/v1/object/{bucket}/{path}` pode estar esperando `multipart/form-data`. O SDK usa o método correto internamente.
+## Para o YouTube
 
-2. **Extension hardcoded**: O path sempre usa `.mp4` (`${crypto.randomUUID()}.mp4`), mas o arquivo pode ter content-type diferente dependendo do browser — se o arquivo não for exatamente MP4 nativo, o upload pode falhar silenciosamente mesmo retornando 200.
+O mesmo problema existe com o player do YouTube — o `div` container é reutilizado. A solução é adicionar `key={youtubeId}` no container do YouTube, forçando a reinicialização do `YT.Player`.
 
-3. **Sem verificação de RLS/Policy**: O bucket `videos` é privado. O XHR com token JWT funciona para leitura via signed URL, mas para **escrita** o Supabase Storage exige que a política RLS da tabela `storage.objects` permita `INSERT` para usuários autenticados. Isso não é verificado no código atual — pode ser a causa raiz do erro silencioso.
+```tsx
+<div
+  key={youtubeId}     // ← recria o container ao trocar de episódio YT
+  ref={ytContainerRef}
+  className="w-full h-full"
+/>
+```
 
-4. **Erro silencioso**: O `xhr.onload` verifica `xhr.status >= 200 && xhr.status < 300`, mas se o Supabase retornar `400` ou `403`, o erro é descartado sem log do corpo da resposta — impossível saber o motivo real.
+## Mudanças Técnicas
 
-## Solução
+### 1. `src/pages/EpisodePlayer.tsx`
 
-Substituir o XHR manual pelo SDK do Supabase (`.storage.from("videos").upload()`), que:
-- Usa o método e headers corretos automaticamente
-- Suporta `onUploadProgress` para manter a barra de progresso
-- Retorna o erro completo com mensagem legível
-- É testado e mantido pelo time do Supabase
+**Adicionar `key` no elemento `<video>`:**
+```tsx
+// Linha ~154 — adicionar key={episode?.id}
+<video
+  key={episode?.id}
+  ref={videoRef}
+  src={videoUrl}
+  className="h-full w-full object-contain"
+  muted={isMuted}
+  playsInline
+  autoPlay         // ← também adicionar autoPlay para iniciar automaticamente
+  onClick={togglePlay}
+  onTimeUpdate={handleTimeUpdate}
+  onLoadedMetadata={...}
+  onPlay={() => setIsPlaying(true)}
+  onPause={() => setIsPlaying(false)}
+  onEnded={handleEnded}
+/>
+```
 
-## Mudança Técnica
+**Adicionar `key` no container do YouTube:**
+```tsx
+// Linha ~149 — adicionar key={youtubeId}
+<div
+  key={youtubeId}
+  ref={ytContainerRef}
+  className="w-full h-full"
+/>
+```
 
-### Arquivo: `src/pages/admin/EpisodeForm.tsx`
+### 2. `src/hooks/useEpisodePlayer.ts`
 
-Substituir a função `uploadVideoWithProgress` atual:
+**Resetar estados quando `episodeId` muda:**
 
-**Antes (XHR manual, problemático):**
+Adicionar um `useEffect` que reseta `currentTime`, `duration`, `isPlaying` e `showEndScreen` sempre que o `episodeId` muda:
+
 ```typescript
-const uploadVideoWithProgress = async (file: File): Promise<string> => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error("Não autenticado");
-
-  return new Promise((resolve, reject) => {
-    const path = `${crypto.randomUUID()}.mp4`;
-    const url = `https://pnuydoujbrpfhohsxndz.supabase.co/storage/v1/object/videos/${path}`;
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.setRequestHeader("Authorization", `Bearer ${session.access_token}`);
-    xhr.setRequestHeader("Content-Type", file.type);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-    };
-    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve(path) : reject(new Error("Upload falhou")));
-    xhr.onerror = () => reject(new Error("Upload falhou"));
-    xhr.send(file);
-  });
-};
+// Reset de estado ao trocar de episódio
+useEffect(() => {
+  setCurrentTime(0);
+  setDuration(0);
+  setIsPlaying(false);
+  setShowEndScreen(false);
+}, [episodeId]);
 ```
 
-**Depois (SDK do Supabase com progresso):**
-```typescript
-const uploadVideoWithProgress = async (file: File): Promise<string> => {
-  const ext = file.name.split(".").pop() ?? "mp4";
-  const path = `${crypto.randomUUID()}.${ext}`;
+Sem esse reset, a barra de progresso e os controles mostram os valores do episódio anterior enquanto o novo vídeo carrega.
 
-  const { data, error } = await supabase.storage
-    .from("videos")
-    .upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-      onUploadProgress: (progress) => {
-        setUploadProgress(Math.round((progress.loaded / progress.total) * 100));
-      },
-    });
+## Fluxo Corrigido
 
-  if (error) throw new Error(error.message);
-  return data.path;
-};
-```
-
-## Por Que Isso Resolve
-
-| Problema Atual | Solução com SDK |
-|---|---|
-| XHR POST pode não enviar no formato correto | SDK usa o método e formato certos internamente |
-| Extensão sempre `.mp4` (hardcoded) | Extensão extraída do nome real do arquivo |
-| Erros silenciosos sem mensagem | `error.message` do SDK é descritivo |
-| Progresso via `xhr.upload.onprogress` | SDK suporta `onUploadProgress` nativamente |
-| Sem `upsert`, pode conflitar | `upsert: false` deixa explícito |
-
-## Verificação de Permissões (Storage RLS)
-
-O bucket `videos` é privado. Para que o upload funcione, a tabela `storage.objects` precisa ter uma policy de `INSERT` para admins. Vou verificar se isso já existe e, se não existir, incluir a migration necessária.
-
-A policy necessária é:
-```sql
--- Admins podem fazer upload no bucket videos
-CREATE POLICY "Admins can upload videos"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (
-  bucket_id = 'videos' AND
-  public.has_role(auth.uid(), 'admin')
-);
+```text
+Usuário clica no episódio #2 (estava no #1)
+         ↓
+navigate("/watch/episodeId2") → episodeId muda
+         ↓
+useEffect reseta currentTime=0, duration=0, isPlaying=false
+         ↓
+React detecta key={episodeId2} ≠ key={episodeId1}
+         ↓
+React DESTRÓI o <video> antigo e CRIA um novo elemento
+         ↓
+Novo <video> com src={videoUrl do ep2} inicia carregamento
+         ↓
+onLoadedMetadata dispara → autoPlay começa → vídeo aparece imediatamente
 ```
 
 ## Arquivos Alterados
 
-- **`src/pages/admin/EpisodeForm.tsx`**: Substituir função `uploadVideoWithProgress` pelo SDK do Supabase
-- **Migration SQL** (se necessário): Adicionar policy de INSERT para admins no bucket `videos`
+- **`src/pages/EpisodePlayer.tsx`**: Adicionar `key={episode?.id}` no `<video>` e `key={youtubeId}` no container YouTube; adicionar `autoPlay` no `<video>`
+- **`src/hooks/useEpisodePlayer.ts`**: Adicionar `useEffect` para resetar estados ao trocar de episódio
