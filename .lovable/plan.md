@@ -1,159 +1,128 @@
 
-# Correção Definitiva: Tela Preta ao Trocar de Episódio (YouTube)
+# Correção do Login com Google — Configuração Supabase + Google Cloud
 
-## Diagnóstico Final — 3 Bugs Reais Identificados
+## Diagnóstico do Erro
 
-### Bug 1: YouTube player antigo não é destruído antes do novo ser criado
+O erro `ERR_CONNECTION_REFUSED` com `localhost` acontece porque:
 
-O `useEffect` no `EpisodePlayer.tsx` tem `[youtubeId]` como dependência. Quando o usuário troca de episódio:
+1. O usuário clica em "Continuar com Google" na produção (`https://www.epsodiox.com`)
+2. O Google autentica o usuário com sucesso
+3. O Google tenta redirecionar para a callback URL registrada no Google Cloud Console
+4. A callback URL registrada no Google Cloud aponta para `localhost` (ambiente de desenvolvimento), **não para a URL de produção**
+5. O browser tenta acessar `localhost` e falha com `ERR_CONNECTION_REFUSED`
 
-- A função de cleanup do `useEffect` **não destrói o player** (`ytPlayerRef.current`)
-- O player antigo continua existindo em memória e tentando enviar `postMessage` para o iframe que já foi removido do DOM
-- Isso causa o erro: `Failed to execute 'postMessage' on 'DOMWindow': The target origin provided ('https://www.youtube.com') does not match the recipient window's origin ('https://www.epsodiox.com')`
+**O código está correto.** `redirectTo: window.location.origin` é a implementação certa — ele usa a URL atual do browser automaticamente. O problema é exclusivamente de configuração externa.
 
-**Fix**: Adicionar `return () => { ytPlayerRef.current?.destroy?.(); ytPlayerRef.current = null; }` no `useEffect` do YouTube.
+## O Que Precisa Ser Configurado
 
-### Bug 2: `navigateWithTransition` usa `setTimeout` que conflita com o ciclo de vida do React
+### Parte 1 — Google Cloud Console
 
-A função atual:
+Você precisa adicionar as URLs corretas no seu projeto OAuth no Google Cloud.
+
+**Onde acessar:** https://console.cloud.google.com → APIs & Services → Credentials → seu OAuth 2.0 Client ID
+
+**Na seção "Authorized JavaScript origins", adicione:**
+```
+https://www.epsodiox.com
+https://epsodiox.com
+```
+
+**Na seção "Authorized redirect URIs", adicione:**
+```
+https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
+```
+
+Esta é a URL mais importante — é para ela que o Google envia o usuário após autenticar. O Supabase então processa o token e redireciona para o seu site.
+
+**Remova ou mantenha separado o localhost:**
+- Se você usa `localhost` para desenvolvimento local, pode mantê-lo, mas certifique-se que as URLs de produção também estão adicionadas.
+
+### Parte 2 — Supabase Dashboard (URL Configuration)
+
+**Onde acessar:** https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/url-configuration
+
+**Site URL** (campo principal):
+```
+https://www.epsodiox.com
+```
+
+**Additional Redirect URLs** (lista de URLs permitidas):
+```
+https://www.epsodiox.com
+https://www.epsodiox.com/**
+https://epsodiox.com
+https://epsodiox.com/**
+https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app
+https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app/**
+```
+
+O `**` no final é importante — permite que qualquer subrota (como `/`, `/auth`, etc.) seja aceita como destino do redirect.
+
+### Parte 3 — Verificar Provider Google no Supabase
+
+**Onde acessar:** https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/providers
+
+Confirmar que:
+- O provider **Google** está habilitado (toggle ligado)
+- O **Client ID** e **Client Secret** do Google Cloud estão preenchidos corretamente
+
+## Análise do Código Atual
+
+O código de autenticação está implementado corretamente seguindo as boas práticas:
+
+**`src/hooks/useAuth.tsx` — signInWithGoogle:**
 ```typescript
-const navigateWithTransition = useCallback((path: string) => {
-  setIsTransitioning(true);
-  setTimeout(() => navigate(path), 200); // ← navega 200ms depois
-}, [navigate]);
-```
-
-O problema: durante esses 200ms, o player antigo ainda está montado **com o `isTransitioning=true`** mostrando o skeleton. Quando o `navigate()` finalmente executa, o React tenta remontar — mas o player do YouTube (se ambos os episódios forem YouTube) não reconhece a mudança do `key={youtubeId}` porque o `youtubeId` novo ainda não foi buscado. O `key` não mudou, então o YouTube container **não é recriado**.
-
-**Fix**: Remover o `setTimeout` e navegar diretamente, usando apenas o React Query + loading states para mostrar o skeleton. A transição de fade pode ser mantida com CSS mas sem delay no `navigate`.
-
-### Bug 3: `key={youtubeId}` não garante remontagem se ambos os episódios têm YouTube
-
-Se o episódio A tem `youtubeId = "abc123"` e episódio B tem `youtubeId = "xyz789"`, a `key` muda → funciona.
-
-Mas se o componente monta com o `youtubeId` antigo porque o `episode` ainda não foi buscado (`epLoading=true`), o `key` do container ainda é o `youtubeId` antigo. Quando o `episode` novo chega, o `youtubeId` muda → **o container é recriado** — mas o `useEffect` que inicializa o YT.Player tem `[youtubeId]` como dependência e vai tentar reinicializar. Porém a limpeza do player antigo não acontece porque o `useEffect` cleanup roda com o novo `youtubeId`.
-
-**Fix combinado**: Usar `episodeId` (não `youtubeId`) como `key` do container YouTube + destruir o player antigo no cleanup.
-
-## Solução Completa
-
-### Mudança 1 — `src/pages/EpisodePlayer.tsx`: Destruir player e usar `key={episodeId}`
-
-```tsx
-// useEffect YouTube: adicionar cleanup com destroy
-useEffect(() => {
-  if (!youtubeId) return;
-
-  const initPlayer = () => { ... };
-
-  // ... mesma lógica de init
-
-  // NOVO: cleanup que destrói o player
-  return () => {
-    try {
-      if (ytPlayerRef.current) {
-        ytPlayerRef.current.destroy();
-        ytPlayerRef.current = null;
-      }
-    } catch (_) {}
-  };
-}, [youtubeId]); // ← continua dependendo de youtubeId
-```
-
-```tsx
-// Container YouTube: key baseado em episodeId (não youtubeId)
-{youtubeId ? (
-  <div
-    key={episodeId}  // ← muda toda vez que o episódio muda
-    ref={ytContainerRef}
-    className="w-full h-full"
-  />
-) : ...}
-```
-
-### Mudança 2 — `src/pages/EpisodePlayer.tsx`: Remover `setTimeout` do `navigateWithTransition`
-
-```typescript
-// ANTES (com bug):
-const navigateWithTransition = useCallback((path: string) => {
-  setIsTransitioning(true);
-  setTimeout(() => navigate(path), 200); // ← delay problemático
-}, [navigate]);
-
-// DEPOIS (sem bug):
-const navigateWithTransition = useCallback((path: string) => {
-  navigate(path); // navega imediato, skeleton é controlado pelo isLoading do hook
-}, [navigate]);
-```
-
-O skeleton já existe e é controlado por `isLoading = epLoading || accessLoading || videoUrlLoading`. Não é necessário o `setTimeout` — o feedback visual já está garantido pelo React Query loading states.
-
-### Mudança 3 — `src/pages/EpisodePlayer.tsx`: Remover `isTransitioning` do render
-
-Com o `setTimeout` removido, o `isTransitioning` não é mais necessário. A condição no JSX:
-
-```tsx
-// REMOVER:
-{isTransitioning ? (
-  <Skeleton className="w-full h-full rounded-none" />
-) : youtubeId ? (
-```
-
-Passa a ser simplesmente:
-
-```tsx
-// SIMPLIFICADO:
-{youtubeId ? (
-  <div key={episodeId} ref={ytContainerRef} className="w-full h-full" />
-) : videoUrl ? (
-  <video key={`${episodeId}-${videoUrl}`} ... />
-) : (
-  ...
-)}
-```
-
-O skeleton de loading já está no bloco `if (isLoading) { return <Skeleton...> }` no topo do componente.
-
-### Mudança 4 — `src/hooks/useEpisodePlayer.ts`: Expor `episodeId` no retorno
-
-O `episodeId` já existe no hook (via `useParams`) mas não é retornado. Precisamos exportá-lo para o `EpisodePlayer.tsx` usar como `key`:
-
-```typescript
-return {
-  episodeId, // ← NOVO
-  episode, epLoading, ...
+const signInWithGoogle = async () => {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: window.location.origin, // correto: usa a URL atual do browser
+    },
+  });
+  if (error) throw error;
 };
 ```
 
-## Fluxo Corrigido
+**O listener `onAuthStateChange` está correto** — configurado antes de `getSession()`, detecta `SIGNED_IN` após o redirect do Google e atualiza o estado automaticamente.
+
+**Não é necessária nenhuma mudança de código** para o Google OAuth funcionar — apenas as configurações externas acima.
+
+## Fluxo Completo do OAuth (Para Referência)
 
 ```text
-Usuário clica "Episódio 2"
+1. Usuário clica "Continuar com Google" em https://www.epsodiox.com
          ↓
-navigate("/watch/ep2Id") — imediato, sem delay
+2. signInWithOAuth({ provider: "google", redirectTo: "https://www.epsodiox.com" })
          ↓
-episodeId muda → useEffect cleanup roda → ytPlayer.destroy() ← FIX BUG 1
+3. Supabase redireciona para accounts.google.com com os parâmetros OAuth
          ↓
-epLoading=true → isLoading=true → skeleton exibido
+4. Usuário autoriza no Google
          ↓
-episode novo chega → youtubeId novo derivado
+5. Google redireciona para: https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
+   (esta URL DEVE estar no Google Cloud Console como "Authorized redirect URI")
          ↓
-key={episodeId} no container mudou → div destruída e recriada ← FIX BUG 3
+6. Supabase processa o token, cria/atualiza o usuário
          ↓
-useEffect [youtubeId] roda → novo YT.Player criado no mountDiv
+7. Supabase redireciona para: https://www.epsodiox.com
+   (esta URL DEVE estar nas "Additional Redirect URLs" do Supabase)
          ↓
-onReady → autoplay inicia → vídeo aparece imediatamente ✓
+8. onAuthStateChange dispara com evento SIGNED_IN
+         ↓
+9. Usuário é redirecionado para / ou /admin conforme o papel
 ```
 
-## Arquivos Alterados
+## Checklist de Configuração
 
-### `src/pages/EpisodePlayer.tsx`
-- Adicionar `episodeId` na desestruturação do hook
-- Adicionar cleanup com `ytPlayerRef.current?.destroy()` no `useEffect` do YouTube
-- Trocar `key={youtubeId}` por `key={episodeId}` no container YouTube
-- Remover `navigateWithTransition` com `setTimeout` — navegar direto
-- Remover `isTransitioning` state e a branch do skeleton transitório
-- Remover `isTransitioning` do `cn()` da classe de animação
+- [ ] Google Cloud Console → Authorized JavaScript origins: `https://www.epsodiox.com`
+- [ ] Google Cloud Console → Authorized redirect URIs: `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
+- [ ] Supabase → Site URL: `https://www.epsodiox.com`
+- [ ] Supabase → Additional Redirect URLs inclui `https://www.epsodiox.com/**`
+- [ ] Supabase → Provider Google habilitado com Client ID e Secret corretos
 
-### `src/hooks/useEpisodePlayer.ts`
-- Adicionar `episodeId` ao objeto de retorno do hook
+## Nenhuma mudança de código necessária
+
+A implementação atual já segue todas as boas práticas:
+- `onAuthStateChange` configurado corretamente no `AuthProvider`
+- `redirectTo: window.location.origin` usa a URL atual dinamicamente
+- `getSession()` recupera sessão existente no carregamento inicial
+- O fluxo de redirecionamento pós-login (`navigate(isAdmin ? "/admin" : "/")`) está correto
