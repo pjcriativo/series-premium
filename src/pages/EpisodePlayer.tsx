@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 const EpisodePlayer = () => {
   const {
     episodeId,
-    episode, epLoading, accessLoading,
+    episode, epLoading, accessLoading, hasAccess,
     savedProgress,
     videoRef, videoUrl, videoUrlLoading, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
@@ -31,6 +31,7 @@ const EpisodePlayer = () => {
     handleReplay, handleNext, handleSeek, formatTime,
     navigate, queryClient,
     onYTPlayerReady,
+    user,
   } = useEpisodePlayer();
 
   const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
@@ -60,6 +61,104 @@ const EpisodePlayer = () => {
             </div>
           </div>
         </main>
+      </div>
+    );
+  }
+
+  // ── In-page lock screen ──────────────────────────────────────────────────────
+  const priceCoin = episode?.price_coins ?? 0;
+  const canAfford = walletBalance >= priceCoin;
+
+  if (!epLoading && !accessLoading && episode && hasAccess === false) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center px-4 py-20">
+          <div className="w-full max-w-sm flex flex-col items-center text-center gap-6">
+            {/* Lock icon */}
+            <div className="h-20 w-20 rounded-full bg-secondary flex items-center justify-center">
+              <Lock className="h-10 w-10 text-muted-foreground" />
+            </div>
+
+            {!user ? (
+              /* ── Not logged in ── */
+              <>
+                <div className="space-y-1">
+                  <h1 className="text-xl font-bold text-foreground">Faça login para assistir</h1>
+                  <p className="text-sm text-muted-foreground">Este episódio é exclusivo para usuários cadastrados.</p>
+                </div>
+                <Button asChild className="w-full rounded-full gap-2" size="lg">
+                  <Link to="/auth">Entrar / Criar conta</Link>
+                </Button>
+                <Button variant="outline" className="w-full rounded-full" onClick={() => navigate(`/series/${seriesId}`)}>
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Voltar para a série
+                </Button>
+              </>
+            ) : !canAfford ? (
+              /* ── Logged in, insufficient balance ── */
+              <>
+                <div className="space-y-1">
+                  <h1 className="text-xl font-bold text-foreground">Créditos insuficientes</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Você precisa de <span className="font-semibold text-foreground">{priceCoin} moedas</span> para assistir este episódio.
+                    Seu saldo atual é de <span className="font-semibold text-foreground">{walletBalance} moedas</span>.
+                  </p>
+                </div>
+                <Button asChild className="w-full rounded-full gap-2" size="lg">
+                  <Link to="/coin-store">Comprar Créditos</Link>
+                </Button>
+                <Button variant="outline" className="w-full rounded-full" onClick={() => navigate(`/series/${seriesId}`)}>
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Voltar para a série
+                </Button>
+              </>
+            ) : (
+              /* ── Logged in, can afford — show unlock prompt ── */
+              <>
+                <div className="space-y-1">
+                  <h1 className="text-xl font-bold text-foreground">Episódio bloqueado</h1>
+                  <p className="text-sm text-muted-foreground">
+                    Desbloqueie por <span className="font-semibold text-foreground">{priceCoin} moedas</span>.
+                    Seu saldo: <span className="font-semibold text-foreground">{walletBalance} moedas</span>.
+                  </p>
+                </div>
+                <Button
+                  className="w-full rounded-full gap-2"
+                  size="lg"
+                  onClick={() => setShowPaywall(true)}
+                >
+                  <Lock className="h-4 w-4" />
+                  Desbloquear por {priceCoin} moedas
+                </Button>
+                <Button variant="outline" className="w-full rounded-full" onClick={() => navigate(`/series/${seriesId}`)}>
+                  <ChevronLeft className="h-4 w-4 mr-1" /> Voltar para a série
+                </Button>
+              </>
+            )}
+          </div>
+        </main>
+
+        {/* Paywall modal triggered from lock screen */}
+        {episode && (
+          <PaywallModal
+            open={showPaywall}
+            onOpenChange={setShowPaywall}
+            episodeTitle={`Ep. ${episode.episode_number} — ${episode.title}`}
+            episodeId={episode.id}
+            priceCoin={priceCoin}
+            balance={walletBalance}
+            seriesId={seriesId}
+            seriesTitle={(episode as any)?.series?.title ?? ""}
+            seriesTotalCost={priceCoin}
+            onUnlocked={() => {
+              queryClient.invalidateQueries({ queryKey: ["wallet"] });
+              queryClient.invalidateQueries({ queryKey: ["episode-access", episode.id, user?.id] });
+              queryClient.invalidateQueries({ queryKey: ["episode-unlock", episode.id] });
+              setShowPaywall(false);
+            }}
+          />
+        )}
+
+        <BottomNav />
       </div>
     );
   }

@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 
 export const useEpisodePlayer = () => {
   const { episodeId } = useParams<{ episodeId: string }>();
-  const { user, session, profile } = useAuth();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -235,13 +235,8 @@ export const useEpisodePlayer = () => {
     }
   }, [episode?.id, hasAccess]);
 
-  // Redirect if no access
-  useEffect(() => {
-    if (!epLoading && !accessLoading && episode && hasAccess === false) {
-      toast({ title: "Acesso negado", description: "Desbloqueie este episódio primeiro.", variant: "destructive" });
-      navigate(`/series/${seriesId}`, { replace: true });
-    }
-  }, [hasAccess, accessLoading, epLoading, episode, navigate, seriesId]);
+  // No longer auto-redirect when hasAccess === false.
+  // EpisodePlayer renders an in-page lock screen instead.
 
   // (Restore position is now handled via onLoadedMetadata in EpisodePlayer to avoid race conditions)
 
@@ -355,6 +350,7 @@ export const useEpisodePlayer = () => {
 
   return {
     episodeId,
+    user,
     episode, epLoading, accessLoading, hasAccess,
     savedProgress,
     videoRef, videoUrl, videoUrlLoading, youtubeId,
