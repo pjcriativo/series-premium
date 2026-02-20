@@ -1,84 +1,104 @@
 
-# Bloqueio de Episódio com Saldo Insuficiente — Análise e Plano
+# Correção do Perfil e Bloqueio de Compra sem Pagamento
 
-## O que já existe (não será refeito)
+## Diagnóstico dos Problemas
 
-O sistema já tem uma arquitetura robusta e funcional:
+### Problema 1 — Card de perfil no Navbar sem link para o perfil completo
 
-- `src/lib/unlockService.ts` — `canAccessEpisode()` e `unlockEpisode()` com toda a lógica de acesso
-- Edge Function `unlock-episode` — valida saldo, debita carteira, cria unlock no banco com segurança total (nenhum bypass possível pelo frontend)
-- `useEpisodePlayer.ts` — access check via queries Supabase, `hasAccess` boolean, `showPaywall` state, `walletBalance`
-- `PaywallModal` — modal completo com unlock de episódio, unlock de série e recarga de moedas
-- Tabelas `wallets`, `episodes` (com `price_coins`, `is_free`), `episode_unlocks`, `series_unlocks` — todas existentes com RLS
+O HoverCard do avatar no `Navbar.tsx` mostra email + saldo com dois botões:
+- "Completar" → redireciona para `/wallet` (loja de moedas), não para o perfil
+- "Sair" → logout
 
-## Gaps reais identificados
+Não existe nenhum botão/link "Ver Perfil" apontando para `/me`. O usuário clica no avatar esperando ir ao perfil e vai parar na loja de moedas, ou a tela parece vazia porque a rota `/profile` não existe (a rota correta é `/me`).
 
-### Gap 1 — Redirect silencioso em vez de modal contextual
-Quando `hasAccess === false`, o hook atual faz:
-```ts
-navigate(`/series/${seriesId}`, { replace: true });
+### Problema 2 — Compra de moedas sem pagamento real
+
+A Edge Function `buy-coins/index.ts` na rota de compra normal:
+1. Recebe `package_id`
+2. Busca o pacote no banco
+3. **Imediatamente credita as moedas na carteira**
+4. Registra transação com `reason: "purchase"`
+
+Não há nenhuma validação de pagamento (Stripe, PIX, etc.). Qualquer clique em "Comprar" adiciona moedas gratuitamente. Isso é uma falha crítica de monetização.
+
+O usuário mencionou que **Stripe será adicionado depois**. Portanto, a solução correta agora é **bloquear a compra** e mostrar uma tela de "Em breve" ao invés de processar o pagamento falso.
+
+---
+
+## O que será corrigido
+
+### Fix 1 — Navbar HoverCard: adicionar link "Meu Perfil"
+
+Em `src/components/Navbar.tsx`, adicionar um botão "Meu Perfil" no HoverCard que leva para `/me`, posicionado antes de "Completar".
+
+### Fix 2 — Bloquear compra de moedas sem pagamento
+
+**Estratégia:** Como o Stripe ainda será integrado, a abordagem é substituir a ação de compra por um modal/estado de "Em breve — pagamento via Stripe em configuração". O botão "Comprar" nos dois lugares onde aparece:
+
+- `src/components/profile/CreditPackages.tsx` (no perfil `/me`)
+- `src/pages/CoinStore.tsx` (na loja `/wallet`)
+
+...não irá mais chamar a Edge Function `buy-coins`. Em vez disso, mostrará um modal com:
+
 ```
-O usuário é expulso da página `/watch/:id` sem ver nenhuma tela de bloqueio. A request pede que o player **não seja carregado** e um modal/tela de bloqueio seja mostrado na própria página.
+Pagamento em breve
+O sistema de pagamento está sendo configurado.
+Em breve você poderá comprar moedas com Stripe, PIX e cartão de crédito.
+```
 
-### Gap 2 — Usuário não logado acessa `/watch/:id` sem proteção
-A rota `/watch/:episodeId` em `App.tsx` **não usa `<ProtectedRoute>`**. Para episódios pagos, um usuário não autenticado chega na página, o access check retorna `false`, e o redirect vai para `/series/:id` (não para `/auth`).
+**A Edge Function `buy-coins` permanece intacta** (será conectada ao Stripe depois), mas o frontend deixa de chamá-la para compras normais de usuários. O fluxo de admin_grant (crédito administrativo) continua funcionando normalmente.
 
-### Gap 3 — Saldo insuficiente vs. conteúdo desbloqueado — mensagem idêntica
-Atualmente não há distinção visual entre "você não desbloqueou este episódio" e "você não tem créditos". Ambos redirectam igual. O pedido quer uma tela dedicada para o caso de saldo zero.
+### Fix 3 — Rota "Completar" no Navbar
 
-### Gap 4 — Badge de saldo zero no perfil
-Quando `balance === 0`, não há nenhuma indicação visual no header/perfil. O pedido pede um badge de alerta.
-
-### Gap 5 — Regra de negócio: `price_coins <= balance` dá acesso imediato?
-O pedido inclui a regra: _"se `price_coins <= user_wallet.balance` → pode assistir"_. Esta regra significaria que o usuário assiste sem criar um unlock record. **Isso é uma mudança semântica importante**: atualmente o sistema exige unlock explícito (débito de moedas + registro). Essa regra quebraria o histórico de compras e o sistema de monetização. O correto é **manter a regra atual** (precisa desbloquear para assistir), mas melhorar a UX mostrando o modal contextual em vez de redirecionar.
+O botão "Completar" no HoverCard do Navbar atualmente aponta para `/wallet`. Isso será mantido pois a loja terá o aviso "Em breve". Mas será adicionado também o botão de perfil para clareza.
 
 ---
 
-## O que será implementado
-
-### 1. Tela de bloqueio in-page em `/watch/:id` (mudança principal)
-
-Em vez de redirecionar, quando `hasAccess === false`, mostrar uma tela de bloqueio **dentro da própria página** do player, sem expulsar o usuário.
-
-A tela terá dois estados:
-- **Usuário não logado**: mensagem "Faça login para assistir" + botão → `/auth`
-- **Logado sem acesso + saldo suficiente**: mostrar botão "Desbloquear por X moedas" diretamente
-- **Logado sem acesso + saldo insuficiente**: modal "Créditos insuficientes" com custo e botão "Comprar Créditos" → `/wallet`
-
-A alteração acontece em `useEpisodePlayer.ts` (remover o redirect automático) e `EpisodePlayer.tsx` (renderizar tela de bloqueio condicional no lugar do player).
-
-### 2. Proteção da rota `/watch/:id` para não-logados em episódios pagos
-
-O access check no hook já retorna `false` para não logados em episódios pagos. A tela de bloqueio in-page lidará com este caso mostrando CTA de login, sem necessidade de tornar a rota protegida globalmente (episódios gratuitos devem continuar acessíveis sem login).
-
-### 3. Badge de saldo zero no `ProfileHeader`
-
-Quando `balance === 0`, exibir um badge de alerta laranja/destructive ao lado do saldo no header do perfil (`src/components/profile/ProfileHeader.tsx`), com link rápido "Adicionar Créditos" → `/wallet`.
-
----
-
-## Arquivos afetados
+## Arquivos a modificar
 
 | Arquivo | Mudança |
 |---|---|
-| `src/hooks/useEpisodePlayer.ts` | Remover o `navigate` automático quando `hasAccess === false`; exportar `walletBalance` e `episode.price_coins` |
-| `src/pages/EpisodePlayer.tsx` | Adicionar tela de bloqueio condicional (em vez do redirect silencioso): mostra contexto correto para não-logado, saldo insuficiente ou apenas não desbloqueado |
-| `src/components/profile/ProfileHeader.tsx` | Adicionar badge de alerta quando `balance === 0` e botão rápido "Adicionar Créditos" |
-
-**Sem mudanças de banco de dados** — toda a estrutura já existe.  
-**Sem mudanças na Edge Function** — o backend já é 100% seguro.  
-**Sem mudanças no `PaywallModal`** — já funciona para o desbloqueio normal.
+| `src/components/Navbar.tsx` | Adicionar link "Meu Perfil" no HoverCard antes do botão "Completar" |
+| `src/components/profile/CreditPackages.tsx` | Substituir chamada à Edge Function por modal "Pagamento em breve" |
+| `src/pages/CoinStore.tsx` | Substituir chamada à Edge Function por modal "Pagamento em breve" |
 
 ---
 
-## Comportamento final por cenário
+## UX do modal "Pagamento em breve"
 
-| Cenário | Comportamento atual | Comportamento novo |
-|---|---|---|
-| Episódio gratuito | Acessa normalmente | Igual |
-| Episódio desbloqueado (com unlock) | Acessa normalmente | Igual |
-| Usuário não logado + episódio pago | Redirect para `/series/:id` | Tela de bloqueio: "Faça login para assistir" |
-| Logado + episódio pago + saldo suficiente | Redirect para `/series/:id` + toast "Acesso negado" | Tela de bloqueio: botão "Desbloquear por X moedas" → abre PaywallModal |
-| Logado + episódio pago + saldo = 0 | Redirect para `/series/:id` + toast "Acesso negado" | Tela de bloqueio: "Créditos insuficientes" + botão "Comprar Créditos" → `/wallet` |
-| Acesso direto por URL (bypass) | Redirect para `/series/:id` | Tela de bloqueio (mesma lógica) |
-| Saldo = 0 no perfil | Sem indicação visual | Badge laranja de alerta no `ProfileHeader` |
+Ao clicar em "Comprar" em qualquer pacote, em vez de processar:
+
+```
+[Ícone de cadeado ou cartão]
+Pagamento em breve
+
+O sistema de compra de moedas está em configuração.
+Em breve você poderá comprar com:
+• Cartão de crédito via Stripe
+• PIX
+• Google Pay
+
+Aguarde a liberação!
+
+[Fechar]
+```
+
+Implementado como um `Dialog` do Radix UI já disponível no projeto — sem dependências novas.
+
+---
+
+## O que NÃO será alterado
+
+- A Edge Function `buy-coins` — permanece para quando o Stripe for integrado
+- O fluxo de `admin_grant` — admins continuam podendo creditar manualmente
+- O banco de dados — nenhuma mudança de schema necessária
+- A lógica de desbloqueio de episódios — permanece igual
+- A rota `/me` e o perfil completo — continuam funcionando
+
+---
+
+## Notas técnicas
+
+- O HoverCard do Navbar já existe com Radix UI — sem alteração estrutural
+- O Dialog de "Em breve" usa o componente `src/components/ui/dialog.tsx` já existente
+- Quando o Stripe for integrado, bastará remover o modal de bloqueio e reconectar `handleBuy` à Edge Function com o checkout do Stripe
