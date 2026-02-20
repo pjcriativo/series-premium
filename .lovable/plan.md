@@ -1,110 +1,97 @@
 
-# Correção do ERR_CONNECTION_REFUSED — Site URL Incorreto no Supabase
+# Aprimorar Página de Perfil /me com Edição Completa e Integração de Carteira
 
-## Diagnóstico Definitivo
+## Análise do que já existe
 
-O screenshot confirma: a URL do browser após o login com Google é:
-```
-localhost:3000/#access_token=eyJhbGciOiJIUzI1NiIs...
-```
+O projeto já tem uma base sólida. A rota `/me` existe e usa `ProtectedRoute`. Há tabelas reais no Supabase: `profiles`, `wallets`, `transactions`. A loja de moedas (`CoinStore.tsx`) já funciona com a edge function `buy-coins`. O histórico de transações já é exibido.
 
-O `access_token` presente na URL significa que a autenticação com Google funcionou completamente. O problema é que o Supabase está redirecionando o usuário para `http://localhost:3000` após a autenticação, porque o **Site URL** no Supabase Dashboard ainda está configurado como `http://localhost:3000`.
+**O que está faltando:**
+- Campos `phone` e `bio` na tabela `profiles`
+- Formulário para editar o perfil (nome, telefone, bio)
+- Upload de avatar via Supabase Storage
+- Visual mais completo e moderno para a página /me
+- Skeleton loading enquanto os dados carregam
 
-O código em `useAuth.tsx` usa `redirectTo: window.location.origin`, que envia a URL de origem correta para o Supabase no momento do login. Porém o Supabase usa o **Site URL** como fallback principal quando monta o redirect final — e esse valor ainda aponta para localhost.
+## Estrutura do banco de dados — alteração necessária
 
-## Nenhuma mudança de código necessária
+A tabela `profiles` precisa de 2 novos campos:
 
-O código está perfeito. A correção é apenas de configuração externa no Supabase Dashboard.
-
-## O Que Precisa Ser Feito (Ação Manual do Usuário)
-
-### Passo 1 — Alterar o Site URL no Supabase
-
-Acesse: https://supabase.com/dashboard/project/pnuydoujbrpfhohsxndz/auth/url-configuration
-
-**Campo "Site URL"** — altere de:
-```
-http://localhost:3000
-```
-Para:
-```
-https://www.epsodiox.com
+```sql
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS phone text,
+  ADD COLUMN IF NOT EXISTS bio text;
 ```
 
-### Passo 2 — Confirmar as Additional Redirect URLs
+Não são necessárias novas tabelas — `wallets` e `transactions` já existem e funcionam.
 
-No mesmo painel, certifique-se que a lista "Additional Redirect URLs" contém:
-```
-https://www.epsodiox.com
-https://www.epsodiox.com/**
-https://epsodiox.com
-https://epsodiox.com/**
-https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app
-https://id-preview--06cee25c-9e0d-4e4c-adc2-3b80eee530c2.lovable.app/**
-http://localhost:5173
-http://localhost:5173/**
-http://localhost:3000
-http://localhost:3000/**
-```
+## Arquitetura da solução
 
-### Passo 3 — Confirmar o Google Cloud Console
-
-No Google Cloud Console, em APIs & Services → Credentials → OAuth 2.0 Client ID:
-
-**Authorized JavaScript origins:**
-```
-https://www.epsodiox.com
-https://epsodiox.com
-http://localhost:5173
-http://localhost:3000
-```
-
-**Authorized redirect URIs** — deve conter APENAS:
-```
-https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
-```
-
-## Por Que o Token Aparece na URL do localhost
-
-O fluxo que está ocorrendo atualmente:
+A página `/me` será reformulada em uma estrutura de componentes separados:
 
 ```text
-1. Usuário clica "Continuar com Google" em epsodiox.com
-         ↓
-2. Supabase envia redirectTo: "https://www.epsodiox.com" para o Google
-         ↓
-3. Google autentica e redireciona para:
-   https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback
-         ↓
-4. Supabase processa o token com sucesso
-         ↓
-5. Supabase consulta o "Site URL" configurado = http://localhost:3000  ← PROBLEMA
-         ↓
-6. Supabase redireciona para: http://localhost:3000/#access_token=...
-         ↓
-7. Browser tenta acessar localhost:3000 → ERR_CONNECTION_REFUSED
+src/
+├── pages/
+│   └── Profile.tsx              ← reformulado como orquestrador
+└── components/
+    └── profile/
+        ├── ProfileHeader.tsx    ← avatar, nome, email, saldo
+        ├── EditProfileForm.tsx  ← form com nome, telefone, bio, avatar
+        ├── WalletCard.tsx       ← saldo atual + botão para loja
+        ├── CreditPackages.tsx   ← 3 pacotes com compra simulada
+        └── TransactionHistory.tsx ← tabela de histórico
 ```
 
-Após corrigir o Site URL para `https://www.epsodiox.com`:
+## O que será implementado
 
-```text
-5. Supabase consulta o "Site URL" configurado = https://www.epsodiox.com  ✓
-         ↓
-6. Supabase redireciona para: https://www.epsodiox.com/#access_token=...
-         ↓
-7. onAuthStateChange detecta SIGNED_IN ✓
-         ↓
-8. navigate(isAdmin ? "/admin" : "/")  ✓
-```
+### 1. Migração de banco de dados
+Adicionar `phone` (text, nullable) e `bio` (text, nullable) à tabela `profiles`. Os campos existentes e os dados atuais não são afetados.
 
-## Checklist de Verificação
+### 2. ProfileHeader.tsx
+- Avatar circular com inicial do nome como fallback
+- Nome completo e email (somente leitura)
+- Saldo atual de moedas exibido com badge
+- Botão "Comprar Créditos" que abre o modal/scroll para pacotes
 
-- [ ] Supabase Dashboard → Site URL alterado para `https://www.epsodiox.com`
-- [ ] Supabase Dashboard → Additional Redirect URLs inclui `https://www.epsodiox.com/**`
-- [ ] Google Cloud Console → Authorized redirect URIs inclui apenas `https://pnuydoujbrpfhohsxndz.supabase.co/auth/v1/callback`
-- [ ] Google Cloud Console → Authorized JavaScript origins inclui `https://www.epsodiox.com`
-- [ ] Testar em aba anônima partindo de `https://www.epsodiox.com/auth`
+### 3. EditProfileForm.tsx
+- Campos: Nome completo, Telefone, Bio (textarea)
+- Upload de avatar: selecionar imagem → enviar para `covers` bucket no Storage → salvar URL em `profiles.avatar_url`
+- Validação: nome obrigatório, telefone max 20 chars, bio max 300 chars
+- Estado de loading durante salvamento
+- Toast de sucesso ou erro
 
-## Nenhuma mudança de código necessária
+### 4. WalletCard.tsx
+- Card com saldo atual e data da última atualização
+- Botão "Adicionar Créditos" que abre seção de pacotes
 
-A implementação React está completamente correta. Apenas o Site URL no Supabase precisa ser alterado de `http://localhost:3000` para `https://www.epsodiox.com`.
+### 5. CreditPackages.tsx
+- 3 pacotes fixos criados na loja: 50, 120 e 300 créditos (lidos do Supabase `coin_packages`)
+- Clicar em "Comprar" chama a edge function `buy-coins` existente
+- Invalida query de wallet ao completar
+- Toast de sucesso
+
+### 6. TransactionHistory.tsx
+- Lista das últimas 20 transações ordenadas por `created_at DESC`
+- Ícone verde para crédito, vermelho para débito
+- Razão traduzida para português
+- Mensagem amigável quando não há transações
+- Skeleton loading enquanto carrega
+
+### 7. Profile.tsx reformulado
+- Carrega todos os dados em paralelo com `useQuery`
+- Exibe skeleton loading enquanto qualquer dado essencial está carregando
+- Nunca deixa spinner infinito (try/catch/finally em todos os fetches)
+- Mantém: toggle de auto-desbloqueio, "Continuar Assistindo", "Séries Assistidas", botão de Sair e link Admin
+
+## Segurança
+- Todos os updates de `profiles` usam `eq("id", user.id)` — RLS do Supabase garante que só o próprio usuário pode atualizar
+- O saldo nunca é alterado diretamente pelo frontend — toda compra passa pela edge function `buy-coins` existente
+- Upload de avatar é feito no bucket `covers` (já público) com path `avatars/{user_id}/{filename}` para isolar por usuário
+
+## Arquivos afetados
+1. **NOVO** `src/components/profile/ProfileHeader.tsx`
+2. **NOVO** `src/components/profile/EditProfileForm.tsx`
+3. **NOVO** `src/components/profile/WalletCard.tsx`
+4. **NOVO** `src/components/profile/CreditPackages.tsx`
+5. **NOVO** `src/components/profile/TransactionHistory.tsx`
+6. **MODIFICADO** `src/pages/Profile.tsx` — reformulado para usar os novos componentes
+7. **MIGRAÇÃO** — adicionar `phone` e `bio` à tabela `profiles`
