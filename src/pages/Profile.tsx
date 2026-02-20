@@ -1,38 +1,87 @@
-import { useAuth } from "@/hooks/useAuth";
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import Navbar from "@/components/Navbar";
 import BottomNav from "@/components/BottomNav";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Coins, LogOut, ShieldCheck, ArrowUpCircle, ArrowDownCircle } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Link } from "react-router-dom";
-import { getSeriesCover } from "@/lib/demo-covers";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { LogOut } from "lucide-react";
 import { toast } from "sonner";
+import { getSeriesCover } from "@/lib/demo-covers";
 
-const reasonLabels: Record<string, string> = {
-  purchase: "Compra de moedas",
-  episode_unlock: "Desbloqueio de episódio",
-  series_unlock: "Desbloqueio de série",
-  admin_adjust: "Ajuste admin",
-};
+import { ProfileHeader } from "@/components/profile/ProfileHeader";
+import { EditProfileForm } from "@/components/profile/EditProfileForm";
+import { WalletCard } from "@/components/profile/WalletCard";
+import { CreditPackages } from "@/components/profile/CreditPackages";
+import { TransactionHistory } from "@/components/profile/TransactionHistory";
 
 const Profile = () => {
   const { user, profile, signOut, isAdmin, refreshProfile } = useAuth();
+  const packagesRef = useRef<HTMLDivElement>(null);
 
-  const { data: wallet } = useQuery({
+  const scrollToPackages = () => {
+    packagesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  // Extended profile (includes phone + bio)
+  const { data: extProfile, isLoading: profileLoading, refetch: refetchProfile } = useQuery({
+    queryKey: ["ext-profile", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("profiles")
+        .select("id, display_name, avatar_url, auto_unlock, phone, bio")
+        .eq("id", user!.id)
+        .single();
+      return data as {
+        id: string;
+        display_name: string | null;
+        avatar_url: string | null;
+        auto_unlock: boolean;
+        phone: string | null;
+        bio: string | null;
+      } | null;
+    },
+    enabled: !!user,
+  });
+
+  const { data: wallet, isLoading: walletLoading } = useQuery({
     queryKey: ["wallet", user?.id],
     queryFn: async () => {
-      const { data } = await supabase.from("wallets").select("balance").eq("user_id", user!.id).single();
+      const { data } = await supabase
+        .from("wallets")
+        .select("balance, updated_at")
+        .eq("user_id", user!.id)
+        .single();
       return data;
     },
     enabled: !!user,
   });
 
+  const { data: transactions, isLoading: txLoading } = useQuery({
+    queryKey: ["transactions", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("transactions")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(20);
+      return data as {
+        id: string;
+        type: "credit" | "debit";
+        reason: string;
+        coins: number;
+        created_at: string;
+      }[];
+    },
+    enabled: !!user,
+  });
+
+  // Continue watching
   const { data: progressList } = useQuery({
     queryKey: ["user-progress-all", user?.id],
     queryFn: async () => {
@@ -76,21 +125,11 @@ const Profile = () => {
     enabled: !!progressList?.length,
   });
 
-  const { data: transactions } = useQuery({
-    queryKey: ["transactions", user?.id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("transactions")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(20);
-      return data;
-    },
-    enabled: !!user,
-  });
-
   const handleAutoUnlockToggle = async (checked: boolean) => {
-    const { error } = await supabase.from("profiles").update({ auto_unlock: checked }).eq("id", user!.id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ auto_unlock: checked })
+      .eq("id", user!.id);
     if (error) {
       toast.error("Erro ao atualizar preferência");
     } else {
@@ -104,171 +143,161 @@ const Profile = () => {
     progressList?.map((p) => [p.series_id, p.last_position_seconds]) ?? []
   );
 
+  const isPageLoading = profileLoading || walletLoading;
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      <main className="pt-14 pb-20 px-4 max-w-lg mx-auto">
-        {/* Header */}
-        <div className="flex flex-col items-center py-8 gap-3">
-          <Avatar className="h-20 w-20 border-2 border-primary">
-            <AvatarFallback className="bg-primary/20 text-primary text-2xl font-bold">
-              {profile?.display_name?.charAt(0)?.toUpperCase() ?? user?.email?.charAt(0)?.toUpperCase() ?? "U"}
-            </AvatarFallback>
-          </Avatar>
-          <h1 className="text-xl font-bold text-foreground">{profile?.display_name ?? "Usuário"}</h1>
-          <p className="text-sm text-muted-foreground">{user?.email}</p>
-        </div>
-
-        {/* Back to admin */}
-        {isAdmin && (
-          <Link
-            to="/admin"
-            className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors mb-4"
-          >
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <span className="text-sm font-medium text-foreground">Voltar ao Painel Admin</span>
-          </Link>
-        )}
-
-        {/* Auto-unlock toggle */}
-        <div className="flex items-center justify-between p-4 rounded-xl bg-card border border-border mb-2">
-          <div>
-            <p className="text-sm font-medium text-foreground">Auto-desbloqueio</p>
-            <p className="text-xs text-muted-foreground">Desbloquear episódios automaticamente ao assistir</p>
+      <main className="pt-14 pb-24 px-4 max-w-lg mx-auto">
+        {/* Header skeleton */}
+        {isPageLoading ? (
+          <div className="flex flex-col items-center py-8 gap-4">
+            <Skeleton className="h-24 w-24 rounded-full" />
+            <Skeleton className="h-5 w-36 rounded" />
+            <Skeleton className="h-4 w-48 rounded" />
+            <Skeleton className="h-8 w-40 rounded" />
           </div>
-          <Switch checked={profile?.auto_unlock ?? true} onCheckedChange={handleAutoUnlockToggle} />
-        </div>
+        ) : (
+          <ProfileHeader
+            displayName={extProfile?.display_name ?? profile?.display_name ?? null}
+            email={user?.email}
+            avatarUrl={extProfile?.avatar_url ?? profile?.avatar_url ?? null}
+            balance={wallet?.balance ?? 0}
+            isAdmin={isAdmin}
+            onBuyCredits={scrollToPackages}
+          />
+        )}
 
-        {/* Wallet row */}
-        <Link
-          to="/wallet"
-          className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors mb-6"
-        >
-          <Coins className="h-5 w-5 text-primary" />
-          <span className="flex-1 text-sm font-medium text-foreground">Carteira</span>
-          <span className="text-sm font-bold text-foreground">{wallet?.balance ?? 0} moedas</span>
-        </Link>
+        <div className="space-y-5">
+          {/* Wallet card */}
+          {walletLoading ? (
+            <Skeleton className="h-24 rounded-xl" />
+          ) : (
+            <WalletCard
+              balance={wallet?.balance ?? 0}
+              updatedAt={wallet?.updated_at}
+              onAddCredits={scrollToPackages}
+            />
+          )}
 
-        {/* Continuar Assistindo */}
-        {continueEpisodes && continueEpisodes.length > 0 && (
-          <section className="mb-6">
-            <h2 className="text-base font-semibold text-foreground mb-3">Continuar Assistindo</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-              {continueEpisodes.map((ep) => {
-                const series = seriesMap.get(ep.series_id);
-                if (!series) return null;
-                const cover = getSeriesCover(series.id, series.cover_url);
-                return (
-                  <Link
-                    key={ep.id}
-                    to={`/watch/${ep.id}`}
-                    className="group flex-shrink-0 w-32 snap-start"
-                  >
-                    <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-1.5">
-                      {cover ? (
-                        <img src={cover} alt={series.title} className="w-full h-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-secondary">
-                          <span className="text-muted-foreground text-2xl font-bold">{series.title.charAt(0)}</span>
+          {/* Edit profile form */}
+          {profileLoading ? (
+            <Skeleton className="h-64 rounded-xl" />
+          ) : extProfile ? (
+            <EditProfileForm
+              userId={user!.id}
+              initialName={extProfile.display_name}
+              initialPhone={extProfile.phone}
+              initialBio={extProfile.bio}
+              initialAvatarUrl={extProfile.avatar_url}
+              onSaved={async () => {
+                await refetchProfile();
+                await refreshProfile();
+              }}
+            />
+          ) : null}
+
+          {/* Auto-unlock toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-card border border-border">
+            <div>
+              <p className="text-sm font-medium text-foreground">Auto-desbloqueio</p>
+              <p className="text-xs text-muted-foreground">
+                Desbloquear episódios automaticamente ao assistir
+              </p>
+            </div>
+            <Switch
+              checked={extProfile?.auto_unlock ?? profile?.auto_unlock ?? true}
+              onCheckedChange={handleAutoUnlockToggle}
+            />
+          </div>
+
+          {/* Continue watching */}
+          {continueEpisodes && continueEpisodes.length > 0 && (
+            <section>
+              <h2 className="text-base font-semibold text-foreground mb-3">Continuar Assistindo</h2>
+              <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+                {continueEpisodes.map((ep) => {
+                  const series = seriesMap.get(ep.series_id);
+                  if (!series) return null;
+                  const cover = getSeriesCover(series.id, series.cover_url);
+                  const pos = progressMap.get(ep.series_id) ?? 0;
+                  const dur = (ep as { duration_seconds?: number }).duration_seconds;
+                  const pct = dur && dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
+                  return (
+                    <Link key={ep.id} to={`/watch/${ep.id}`} className="group flex-shrink-0 w-32 snap-start">
+                      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-1.5">
+                        {cover ? (
+                          <img src={cover} alt={series.title} className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary">
+                            <span className="text-muted-foreground text-2xl font-bold">{series.title.charAt(0)}</span>
+                          </div>
+                        )}
+                        <Badge className="absolute bottom-2 left-2 text-[10px]">Ep. {ep.episode_number}</Badge>
+                      </div>
+                      {pct > 0 && (
+                        <div className="w-full h-1 bg-muted rounded-full overflow-hidden mb-1">
+                          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
                         </div>
                       )}
-                      <Badge className="absolute bottom-2 left-2 text-[10px]">Ep. {ep.episode_number}</Badge>
-                    </div>
-                    {(() => {
-                      const pos = progressMap.get(ep.series_id) ?? 0;
-                      const dur = (ep as any).duration_seconds;
-                      const progressPct = dur && dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : 0;
-                      return progressPct > 0 ? (
-                        <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-0 mb-1">
-                          <div
-                            className="h-full bg-primary rounded-full transition-all"
-                            style={{ width: `${progressPct}%` }}
-                          />
-                        </div>
-                      ) : null;
-                    })()}
-                    <p className="text-xs font-medium text-foreground truncate">{series.title}</p>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
+                      <p className="text-xs font-medium text-foreground truncate">{series.title}</p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-        {/* Séries Assistidas */}
-        {watchedSeries && watchedSeries.length > 0 && (
-          <section className="mb-6">
-            <h2 className="text-base font-semibold text-foreground mb-3">Séries Assistidas</h2>
-            <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
-              {watchedSeries.map((series) => {
-                const cover = getSeriesCover(series.id, series.cover_url);
-                return (
-                  <Link
-                    key={series.id}
-                    to={`/series/${series.id}`}
-                    className="group flex-shrink-0 w-32 snap-start"
-                  >
-                    <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-1.5">
-                      {cover ? (
-                        <img src={cover} alt={series.title} className="w-full h-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-secondary">
-                          <span className="text-muted-foreground text-2xl font-bold">{series.title.charAt(0)}</span>
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs font-medium text-foreground truncate">{series.title}</p>
-                    <p className="text-[10px] text-muted-foreground">{series.total_episodes} ep.</p>
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        )}
+          {/* Watched series */}
+          {watchedSeries && watchedSeries.length > 0 && (
+            <section>
+              <h2 className="text-base font-semibold text-foreground mb-3">Séries Assistidas</h2>
+              <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+                {watchedSeries.map((series) => {
+                  const cover = getSeriesCover(series.id, series.cover_url);
+                  return (
+                    <Link key={series.id} to={`/series/${series.id}`} className="group flex-shrink-0 w-32 snap-start">
+                      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-1.5">
+                        {cover ? (
+                          <img src={cover} alt={series.title} className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary">
+                            <span className="text-muted-foreground text-2xl font-bold">{series.title.charAt(0)}</span>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-xs font-medium text-foreground truncate">{series.title}</p>
+                      <p className="text-[10px] text-muted-foreground">{series.total_episodes} ep.</p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
-        {/* Histórico */}
-        {transactions && transactions.length > 0 && (
-          <section className="mb-6">
-            <h2 className="text-base font-semibold text-foreground mb-3">Histórico</h2>
-            <div className="space-y-1">
-              {transactions.map((tx) => (
-                <div key={tx.id} className="flex items-center gap-3 p-3 rounded-lg bg-card border border-border">
-                  {tx.type === "credit" ? (
-                    <ArrowUpCircle className="h-5 w-5 text-green-500 shrink-0" />
-                  ) : (
-                    <ArrowDownCircle className="h-5 w-5 text-destructive shrink-0" />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {reasonLabels[tx.reason] ?? tx.reason}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatDistanceToNow(new Date(tx.created_at), { addSuffix: true, locale: ptBR })}
-                    </p>
-                  </div>
-                  <span className={`text-sm font-bold ${tx.type === "credit" ? "text-green-500" : "text-destructive"}`}>
-                    {tx.type === "credit" ? "+" : "-"}{tx.coins}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
+          <Separator />
 
-        {/* Admin link */}
-        {isAdmin && (
-          <Link
-            to="/admin"
-            className="flex items-center gap-3 p-4 rounded-xl bg-card border border-border hover:bg-accent/50 transition-colors mb-2"
+          {/* Credit packages */}
+          <div ref={packagesRef}>
+            {user && <CreditPackages userId={user.id} />}
+          </div>
+
+          <Separator />
+
+          {/* Transaction history */}
+          <TransactionHistory transactions={transactions} isLoading={txLoading} />
+
+          <Separator />
+
+          {/* Sign out */}
+          <Button
+            variant="ghost"
+            className="w-full text-muted-foreground gap-2"
+            onClick={signOut}
           >
-            <ShieldCheck className="h-5 w-5 text-primary" />
-            <span className="flex-1 text-sm font-medium text-foreground">Painel Admin</span>
-          </Link>
-        )}
-
-        <Button variant="ghost" className="w-full mt-6 text-muted-foreground gap-2" onClick={signOut}>
-          <LogOut className="h-4 w-4" /> Sair da conta
-        </Button>
+            <LogOut className="h-4 w-4" /> Sair da conta
+          </Button>
+        </div>
       </main>
       <BottomNav />
     </div>

@@ -341,25 +341,31 @@ export type Database = {
         Row: {
           auto_unlock: boolean
           avatar_url: string | null
+          bio: string | null
           created_at: string
           display_name: string | null
           id: string
+          phone: string | null
           updated_at: string
         }
         Insert: {
           auto_unlock?: boolean
           avatar_url?: string | null
+          bio?: string | null
           created_at?: string
           display_name?: string | null
           id: string
+          phone?: string | null
           updated_at?: string
         }
         Update: {
           auto_unlock?: boolean
           avatar_url?: string | null
+          bio?: string | null
           created_at?: string
           display_name?: string | null
           id?: string
+          phone?: string | null
           updated_at?: string
         }
         Relationships: []
