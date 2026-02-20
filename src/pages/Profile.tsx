@@ -35,7 +35,7 @@ const Profile = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from("profiles")
-        .select("id, display_name, avatar_url, auto_unlock, phone, bio")
+        .select("id, display_name, avatar_url, auto_unlock, phone, bio, created_at")
         .eq("id", user!.id)
         .single();
       return data as {
@@ -45,6 +45,7 @@ const Profile = () => {
         auto_unlock: boolean;
         phone: string | null;
         bio: string | null;
+        created_at: string;
       } | null;
     },
     enabled: !!user,
@@ -78,6 +79,30 @@ const Profile = () => {
         coins: number;
         created_at: string;
       }[];
+    },
+    enabled: !!user,
+  });
+
+  // Unlocked episodes history
+  const { data: unlockedEpisodes } = useQuery({
+    queryKey: ["unlocked-episodes", user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("episode_unlocks")
+        .select("unlocked_at, episode_id, episodes(id, title, episode_number, series_id, series(id, title, cover_url))")
+        .order("unlocked_at", { ascending: false })
+        .limit(20);
+      return data as {
+        unlocked_at: string;
+        episode_id: string;
+        episodes: {
+          id: string;
+          title: string;
+          episode_number: number;
+          series_id: string;
+          series: { id: string; title: string; cover_url: string | null } | null;
+        } | null;
+      }[] | null;
     },
     enabled: !!user,
   });
@@ -166,6 +191,7 @@ const Profile = () => {
             balance={wallet?.balance ?? 0}
             isAdmin={isAdmin}
             onBuyCredits={scrollToPackages}
+            memberSince={extProfile?.created_at ?? null}
           />
         )}
 
@@ -211,6 +237,36 @@ const Profile = () => {
               onCheckedChange={handleAutoUnlockToggle}
             />
           </div>
+
+          {/* Unlocked episodes */}
+          {unlockedEpisodes && unlockedEpisodes.length > 0 && (
+            <section>
+              <h2 className="text-base font-semibold text-foreground mb-3">Episódios Desbloqueados</h2>
+              <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-hide">
+                {unlockedEpisodes.map((unlock) => {
+                  const ep = unlock.episodes;
+                  if (!ep || !ep.series) return null;
+                  const cover = getSeriesCover(ep.series.id, ep.series.cover_url);
+                  return (
+                    <Link key={unlock.episode_id} to={`/watch/${ep.id}`} className="group flex-shrink-0 w-32 snap-start">
+                      <div className="relative aspect-[2/3] rounded-lg overflow-hidden bg-muted mb-1.5">
+                        {cover ? (
+                          <img src={cover} alt={ep.series.title} className="w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center bg-secondary">
+                            <span className="text-muted-foreground text-2xl font-bold">{ep.series.title.charAt(0)}</span>
+                          </div>
+                        )}
+                        <Badge className="absolute bottom-2 left-2 text-[10px]">Ep. {ep.episode_number}</Badge>
+                      </div>
+                      <p className="text-xs font-medium text-foreground truncate">{ep.series.title}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{ep.title}</p>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Continue watching */}
           {continueEpisodes && continueEpisodes.length > 0 && (

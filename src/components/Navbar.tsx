@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import NotificationBell from "@/components/NotificationBell";
 import logo from "@/assets/epsodiox-logo.png";
@@ -80,19 +80,18 @@ const Navbar = () => {
                     </Avatar>
                   </button>
                 </HoverCardTrigger>
-                <HoverCardContent align="end" className="w-60 p-4 hidden md:block">
+                <HoverCardContent align="end" className="w-68 p-4 hidden md:block" style={{ width: "17rem" }}>
                   {/* Header: avatar + name + uid */}
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center gap-2">
-                      <Avatar className="h-9 w-9 border border-primary/50">
-                        <AvatarFallback className="bg-primary/20 text-primary text-sm">
-                          {displayName.charAt(0).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-foreground leading-tight">{displayName}</span>
-                        {uid && <span className="text-[10px] text-muted-foreground leading-tight">UID {uid}</span>}
-                      </div>
+                  <div className="flex items-center gap-2 mb-1 min-w-0">
+                    <Avatar className="h-9 w-9 border border-primary/50 flex-shrink-0">
+                      {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt={displayName} />}
+                      <AvatarFallback className="bg-primary/20 text-primary text-sm">
+                        {displayName.charAt(0).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-sm font-bold text-foreground leading-tight truncate">{displayName}</span>
+                      {uid && <span className="text-[10px] text-muted-foreground leading-tight truncate">{uid}</span>}
                     </div>
                   </div>
 
