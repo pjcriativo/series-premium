@@ -1,129 +1,115 @@
 
-# Corrigir Tela Preta ao Trocar de Episódio no Player
+# Corrigir Tela Preta: Skeleton Durante Fetch da URL Assinada
 
-## Causa Raiz do Bug
+## Causa Raiz Real do Bug (Diagnóstico Atualizado)
 
-Quando o usuário navega de `/watch/episodeA` para `/watch/episodeB`, o React **reutiliza o mesmo componente `EpisodePlayer`** (pois a rota `/watch/:episodeId` é a mesma). Isso significa:
+O fix anterior (`key` no `<video>`) resolve a reutilização do elemento, mas **não resolve o timing**. O fluxo atual após trocar de episódio é:
 
-1. O mesmo elemento `<video>` permanece no DOM
-2. O `src` do vídeo é atualizado via `videoUrl` (que vem de uma query assíncrona)
-3. O browser detecta a mudança de `src`, mas o elemento ainda está no estado anterior (paused/playing)
-4. O resultado: o browser precisa ser notificado explicitamente para reiniciar o carregamento — sem isso, o vídeo fica preto mas o áudio do buffer antigo ainda toca
-
-**Evidência no código atual** (`EpisodePlayer.tsx`, linha 154-178):
-```tsx
-<video
-  ref={videoRef}
-  src={videoUrl}       // ← src muda mas o elemento não é destruído/recriado
-  ...
-/>
+```
+episodeId muda
+    ↓
+epLoading=true, accessLoading=true → isLoading=true → skeleton exibido ✓
+    ↓
+epLoading=false, accessLoading=false → isLoading=false → skeleton REMOVIDO
+    ↓
+videoUrl ainda é undefined (query ainda buscando URL assinada) ← PROBLEMA
+    ↓
+<video key={episode?.id} src={undefined}> monta → tela PRETA
+    ↓
+Alguns segundos depois: videoUrl resolve → src muda → mas key NÃO muda
+    ↓
+React não recria o <video> (key é o mesmo) → browser fica com tela preta
+    ↓
+Usuário precisa atualizar a página 2x para ver o vídeo
 ```
 
-Quando `videoUrl` muda (nova URL assinada), o browser precisa de um `video.load()` explícito para reiniciar. Sem ele, o comportamento é indefinido — tela preta + áudio do buffer anterior.
-
-## Solução: Forçar Remontagem com `key` prop
-
-A solução mais confiável e alinhada com o padrão React é adicionar `key={episodeId}` no elemento `<video>`. Isso faz o React **destruir e recriar o elemento DOM** cada vez que o episódio muda, garantindo:
-
-- Novo elemento `<video>` limpo, sem estado residual do episódio anterior
-- O browser inicializa o carregamento desde zero
-- Autoplay funciona normalmente na remontagem
-- Zero áudio residual do episódio anterior
-
-```tsx
-<video
-  key={episodeId}      // ← garante destruição/recriação ao trocar de episódio
-  ref={videoRef}
-  src={videoUrl}
-  ...
-/>
+**O bug em código** (`EpisodePlayer.tsx`, linha 88):
+```typescript
+const isLoading = epLoading || accessLoading;
+// ↑ NÃO inclui "videoUrl está carregando"
 ```
 
-Adicionalmente, é preciso resetar os estados locais (`currentTime`, `duration`, `isPlaying`, `showEndScreen`) quando o `episodeId` muda, pois eles ficam com os valores do episódio anterior até que os eventos do novo vídeo os atualizem.
-
-## Para o YouTube
-
-O mesmo problema existe com o player do YouTube — o `div` container é reutilizado. A solução é adicionar `key={youtubeId}` no container do YouTube, forçando a reinicialização do `YT.Player`.
-
+E na linha 153:
 ```tsx
-<div
-  key={youtubeId}     // ← recria o container ao trocar de episódio YT
-  ref={ytContainerRef}
-  className="w-full h-full"
-/>
+} : videoUrl ? (
+  // ← só renderiza o <video> quando videoUrl existe
+  // mas quando videoUrl=undefined, renderiza o fallback "Vídeo não disponível"
+  // e quando videoUrl depois chega, o key={episode?.id} NÃO muda → sem recriação
 ```
 
-## Mudanças Técnicas
+## Solução
 
-### 1. `src/pages/EpisodePlayer.tsx`
+### Parte 1 — Exportar `videoUrlLoading` do hook
 
-**Adicionar `key` no elemento `<video>`:**
-```tsx
-// Linha ~154 — adicionar key={episode?.id}
-<video
-  key={episode?.id}
-  ref={videoRef}
-  src={videoUrl}
-  className="h-full w-full object-contain"
-  muted={isMuted}
-  playsInline
-  autoPlay         // ← também adicionar autoPlay para iniciar automaticamente
-  onClick={togglePlay}
-  onTimeUpdate={handleTimeUpdate}
-  onLoadedMetadata={...}
-  onPlay={() => setIsPlaying(true)}
-  onPause={() => setIsPlaying(false)}
-  onEnded={handleEnded}
-/>
-```
-
-**Adicionar `key` no container do YouTube:**
-```tsx
-// Linha ~149 — adicionar key={youtubeId}
-<div
-  key={youtubeId}
-  ref={ytContainerRef}
-  className="w-full h-full"
-/>
-```
-
-### 2. `src/hooks/useEpisodePlayer.ts`
-
-**Resetar estados quando `episodeId` muda:**
-
-Adicionar um `useEffect` que reseta `currentTime`, `duration`, `isPlaying` e `showEndScreen` sempre que o `episodeId` muda:
+No `useEpisodePlayer.ts`, a query de URL assinada precisa expor seu estado de loading:
 
 ```typescript
-// Reset de estado ao trocar de episódio
-useEffect(() => {
-  setCurrentTime(0);
-  setDuration(0);
-  setIsPlaying(false);
-  setShowEndScreen(false);
-}, [episodeId]);
+const { data: videoUrl, isLoading: videoUrlLoading } = useQuery({
+  queryKey: ["video-url", episode?.video_url],
+  ...
+  enabled: !!episode?.video_url && hasAccess === true && !youtubeId,
+});
 ```
 
-Sem esse reset, a barra de progresso e os controles mostram os valores do episódio anterior enquanto o novo vídeo carrega.
+Retornar `videoUrlLoading` no objeto de retorno do hook.
 
-## Fluxo Corrigido
+### Parte 2 — Incluir `videoUrlLoading` no estado de loading da UI
 
-```text
-Usuário clica no episódio #2 (estava no #1)
-         ↓
-navigate("/watch/episodeId2") → episodeId muda
-         ↓
-useEffect reseta currentTime=0, duration=0, isPlaying=false
-         ↓
-React detecta key={episodeId2} ≠ key={episodeId1}
-         ↓
-React DESTRÓI o <video> antigo e CRIA um novo elemento
-         ↓
-Novo <video> com src={videoUrl do ep2} inicia carregamento
-         ↓
-onLoadedMetadata dispara → autoPlay começa → vídeo aparece imediatamente
+No `EpisodePlayer.tsx`:
+
+```typescript
+const {
+  // ... outros campos
+  videoUrlLoading,
+} = useEpisodePlayer();
+
+// Mostrar skeleton enquanto qualquer dado essencial está carregando
+// Para YouTube: não há videoUrlLoading (youtubeId está disponível direto do episode)
+// Para vídeo nativo: aguardar videoUrl
+const isLoading = epLoading || accessLoading || 
+  (!youtubeId && !!episode?.video_url && videoUrlLoading);
+```
+
+Dessa forma, o skeleton permanece visível até a URL assinada estar disponível, e quando o `<video>` montar pela primeira vez, já terá `src={videoUrl}` com a URL correta — sem tela preta.
+
+### Parte 3 — Usar `videoUrl` como parte da `key` do `<video>`
+
+Para garantir que o `<video>` seja recriado quando a URL assinada mudar (troca de episódio + nova URL):
+
+```tsx
+<video
+  key={`${episode?.id}-${videoUrl}`}
+  ref={videoRef}
+  src={videoUrl}
+  ...
+/>
+```
+
+Isso garante: se o `episode?.id` mudar E a nova `videoUrl` já estiver disponível, o elemento é destruído e recriado com a URL correta já no `src`.
+
+## Diagrama do Fluxo Corrigido
+
+```
+episodeId muda
+    ↓
+epLoading=true → isLoading=true → skeleton ✓
+    ↓
+epLoading=false, videoUrlLoading=true → isLoading=true → skeleton ✓
+    ↓
+videoUrlLoading=false, videoUrl=https://... → isLoading=false → skeleton remove
+    ↓
+<video key="epId-https://..."  src="https://..."> monta COM src já definido
+    ↓
+autoPlay inicia → vídeo aparece IMEDIATAMENTE
 ```
 
 ## Arquivos Alterados
 
-- **`src/pages/EpisodePlayer.tsx`**: Adicionar `key={episode?.id}` no `<video>` e `key={youtubeId}` no container YouTube; adicionar `autoPlay` no `<video>`
-- **`src/hooks/useEpisodePlayer.ts`**: Adicionar `useEffect` para resetar estados ao trocar de episódio
+### `src/hooks/useEpisodePlayer.ts`
+- Capturar `isLoading: videoUrlLoading` da query de URL assinada
+- Adicionar `videoUrlLoading` ao objeto de retorno do hook
+
+### `src/pages/EpisodePlayer.tsx`
+- Desestruturar `videoUrlLoading` do hook
+- Atualizar `isLoading` para incluir o estado da URL assinada
+- Atualizar `key` do `<video>` para `${episode?.id}-${videoUrl}` (garante recriação quando URL chega)
