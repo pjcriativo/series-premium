@@ -29,10 +29,60 @@ import CoinPackageManager from "./pages/admin/CoinPackageManager";
 import BannerManager from "./pages/admin/BannerManager";
 import FanClubManager from "./pages/admin/FanClubManager";
 import NotFound from "./pages/NotFound";
+import { useNewEpisodeNotifications } from "@/hooks/useNewEpisodeNotifications";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1 } },
 });
+
+/** Inner component so hooks can access AuthProvider context */
+const AppRoutes = () => {
+  useNewEpisodeNotifications();
+  return (
+    <Routes>
+      {/* Auth routes */}
+      <Route path="/auth" element={<Auth />} />
+      <Route path="/login" element={<Auth />} />
+      <Route path="/signup" element={<Auth />} />
+      <Route path="/forgot" element={<Auth />} />
+      <Route path="/reset-password" element={<Auth />} />
+
+      {/* Public routes */}
+      <Route path="/" element={<Index />} />
+      <Route path="/reels" element={<ReelsFeed />} />
+      <Route path="/fan-club" element={<FanClub />} />
+      <Route path="/brand" element={<Brand />} />
+      <Route path="/search" element={<SearchPage />} />
+      <Route path="/series/:id" element={<SeriesDetail />} />
+
+      {/* Player */}
+      <Route path="/watch/:episodeId" element={<EpisodePlayer />} />
+
+      {/* User routes */}
+      <Route path="/me" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/wallet" element={<ProtectedRoute><CoinStore /></ProtectedRoute>} />
+      <Route path="/purchases" element={<ProtectedRoute><Purchases /></ProtectedRoute>} />
+
+      {/* Admin routes */}
+      <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
+        <Route index element={<Dashboard />} />
+        <Route path="categories" element={<CategoryManager />} />
+        <Route path="series" element={<SeriesManager />} />
+        <Route path="series/new" element={<SeriesForm />} />
+        <Route path="series/:id/edit" element={<SeriesForm />} />
+        <Route path="episodes" element={<EpisodeManager />} />
+        <Route path="episodes/new" element={<EpisodeForm />} />
+        <Route path="episodes/:id/edit" element={<EpisodeForm />} />
+        <Route path="users" element={<UserManager />} />
+        <Route path="packages" element={<CoinPackageManager />} />
+        <Route path="banners" element={<BannerManager />} />
+        <Route path="fan-club" element={<FanClubManager />} />
+      </Route>
+
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
@@ -41,54 +91,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
-          <Routes>
-            {/* Auth routes */}
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/login" element={<Auth />} />
-            <Route path="/signup" element={<Auth />} />
-            <Route path="/forgot" element={<Auth />} />
-            <Route path="/reset-password" element={<Auth />} />
-
-            {/* Public routes */}
-            <Route path="/" element={<Index />} />
-            <Route path="/reels" element={<ReelsFeed />} />
-            <Route path="/fan-club" element={<FanClub />} />
-            <Route path="/brand" element={<Brand />} />
-            <Route path="/search" element={<SearchPage />} />
-            <Route path="/series/:id" element={<SeriesDetail />} />
-
-            {/* Player */}
-            <Route path="/watch/:episodeId" element={<EpisodePlayer />} />
-
-            {/* User routes */}
-            <Route path="/me" element={
-              <ProtectedRoute><Profile /></ProtectedRoute>
-            } />
-            <Route path="/wallet" element={
-              <ProtectedRoute><CoinStore /></ProtectedRoute>
-            } />
-            <Route path="/purchases" element={
-              <ProtectedRoute><Purchases /></ProtectedRoute>
-            } />
-
-            {/* Admin routes */}
-            <Route path="/admin" element={<AdminRoute><AdminLayout /></AdminRoute>}>
-              <Route index element={<Dashboard />} />
-              <Route path="categories" element={<CategoryManager />} />
-              <Route path="series" element={<SeriesManager />} />
-              <Route path="series/new" element={<SeriesForm />} />
-              <Route path="series/:id/edit" element={<SeriesForm />} />
-              <Route path="episodes" element={<EpisodeManager />} />
-              <Route path="episodes/new" element={<EpisodeForm />} />
-              <Route path="episodes/:id/edit" element={<EpisodeForm />} />
-              <Route path="users" element={<UserManager />} />
-              <Route path="packages" element={<CoinPackageManager />} />
-              <Route path="banners" element={<BannerManager />} />
-              <Route path="fan-club" element={<FanClubManager />} />
-            </Route>
-
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <AppRoutes />
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

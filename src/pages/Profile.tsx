@@ -19,6 +19,7 @@ import { EditProfileForm } from "@/components/profile/EditProfileForm";
 import { WalletCard } from "@/components/profile/WalletCard";
 import { CreditPackages } from "@/components/profile/CreditPackages";
 import { TransactionHistory } from "@/components/profile/TransactionHistory";
+import NotificationSettings from "@/components/profile/NotificationSettings";
 
 const Profile = () => {
   const { user, profile, signOut, isAdmin, refreshProfile } = useAuth();
@@ -274,6 +275,11 @@ const Profile = () => {
               </div>
             </section>
           )}
+
+          <Separator />
+
+          {/* Notification settings */}
+          <NotificationSettings />
 
           <Separator />
 
