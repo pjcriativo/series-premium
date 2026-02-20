@@ -337,6 +337,39 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          body: string
+          created_at: string
+          episode_id: string | null
+          id: string
+          is_read: boolean
+          series_id: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          episode_id?: string | null
+          id?: string
+          is_read?: boolean
+          series_id?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          episode_id?: string | null
+          id?: string
+          is_read?: boolean
+          series_id?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           auto_unlock: boolean
@@ -416,6 +449,27 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      series_follows: {
+        Row: {
+          created_at: string
+          id: string
+          series_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          series_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          series_id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       series_unlocks: {
         Row: {

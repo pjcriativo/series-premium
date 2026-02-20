@@ -1,8 +1,8 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
-import { ArrowLeft, Play, Lock, Coins, PlayCircle } from "lucide-react";
+import { ArrowLeft, Play, Lock, Coins, PlayCircle, Bell, BellOff } from "lucide-react";
 import { getSeriesCover } from "@/lib/demo-covers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Navbar from "@/components/Navbar";
 import PaywallModal from "@/components/PaywallModal";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const SeriesDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -93,6 +94,45 @@ const SeriesDetail = () => {
       return data;
     },
     enabled: !!user && !!id,
+  });
+
+  // Follow / unfollow series for notifications
+  const { data: isFollowing, refetch: refetchFollow } = useQuery({
+    queryKey: ["series-follow", id, user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("series_follows")
+        .select("id")
+        .eq("user_id", user!.id)
+        .eq("series_id", id!)
+        .maybeSingle();
+      return !!data;
+    },
+    enabled: !!user && !!id,
+  });
+
+  const followMutation = useMutation({
+    mutationFn: async (follow: boolean) => {
+      if (follow) {
+        const { error } = await supabase
+          .from("series_follows")
+          .insert({ user_id: user!.id, series_id: id! });
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("series_follows")
+          .delete()
+          .eq("user_id", user!.id)
+          .eq("series_id", id!);
+        if (error) throw error;
+      }
+    },
+    onSuccess: (_, follow) => {
+      refetchFollow();
+      queryClient.invalidateQueries({ queryKey: ["series-follows", user?.id] });
+      toast.success(follow ? "Alertas ativados! Você será notificado sobre novos episódios." : "Alertas desativados.");
+    },
+    onError: () => toast.error("Erro ao atualizar preferência"),
   });
 
   const isEpisodeAccessible = (ep: any) => {
@@ -200,6 +240,22 @@ const SeriesDetail = () => {
                 >
                   <Coins className="h-4 w-4" />
                   Desbloquear Série — {totalSeriesCost} moedas
+                </Button>
+              )}
+
+              {/* Follow / notification toggle */}
+              {user && (
+                <Button
+                  variant={isFollowing ? "secondary" : "outline"}
+                  className="w-full gap-2"
+                  onClick={() => followMutation.mutate(!isFollowing)}
+                  disabled={followMutation.isPending}
+                >
+                  {isFollowing ? (
+                    <><BellOff className="h-4 w-4" /> Seguindo — desativar alertas</>
+                  ) : (
+                    <><Bell className="h-4 w-4" /> Seguir e receber alertas</>
+                  )}
                 </Button>
               )}
             </div>

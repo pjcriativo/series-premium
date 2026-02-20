@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import NotificationBell from "@/components/NotificationBell";
 import logo from "@/assets/epsodiox-logo.png";
 
 const Navbar = () => {
@@ -56,7 +57,7 @@ const Navbar = () => {
         </div>
 
         {/* Right: Auth button or Avatar with HoverCard */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {!user ? (
             <Link to="/auth">
               <Button className="bg-gradient-to-r from-primary to-brand-orange text-primary-foreground font-bold px-6 h-10 rounded-full hover:opacity-90 transition-opacity">
@@ -65,6 +66,10 @@ const Navbar = () => {
             </Link>
           ) : (
             <>
+              {/* Notification bell — desktop */}
+              <div className="hidden md:block">
+                <NotificationBell />
+              </div>
               <HoverCard openDelay={100} closeDelay={200}>
                 <HoverCardTrigger asChild>
                   <button className="cursor-pointer">
