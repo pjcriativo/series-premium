@@ -48,10 +48,16 @@ const EpisodePlayer = () => {
 
     const initPlayer = () => {
       if (!ytContainerRef.current) return;
-      // Avoid double-init if the div was already replaced by the API
+      // Avoid double-init
       if (ytContainerRef.current.querySelector("iframe")) return;
-      new (window as any).YT.Player(ytContainerRef.current, {
+      // Create a child element for YT.Player to replace — this prevents React from
+      // losing track of ytContainerRef.current when the API swaps the element with an iframe
+      const mountDiv = document.createElement("div");
+      ytContainerRef.current.appendChild(mountDiv);
+      new (window as any).YT.Player(mountDiv, {
         videoId: youtubeId,
+        width: "100%",
+        height: "100%",
         playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
         events: {
           onReady: (e: any) => {
@@ -145,7 +151,9 @@ const EpisodePlayer = () => {
                 <ChevronLeft className="h-3.5 w-3.5" />
                 Todos os episódios
               </Link>
-              {youtubeId ? (
+              {isTransitioning ? (
+                <Skeleton className="w-full h-full rounded-none" />
+              ) : youtubeId ? (
                 <div
                   key={youtubeId}
                   ref={ytContainerRef}
