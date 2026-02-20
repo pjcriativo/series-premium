@@ -1,132 +1,84 @@
 
-# Sistema de Notificações de Novos Episódios
+# Bloqueio de Episódio com Saldo Insuficiente — Análise e Plano
 
-## Contexto e análise
+## O que já existe (não será refeito)
 
-O projeto não tem nenhuma estrutura de notificações ou "seguir série". A funcionalidade requer dois componentes distintos:
+O sistema já tem uma arquitetura robusta e funcional:
 
-1. **Seguir séries** — o usuário escolhe quais séries quer acompanhar
-2. **Notificação em tempo real** — quando um novo episódio de uma série seguida é publicado (`is_published` muda para `true`), o usuário recebe um alerta in-app via Supabase Realtime
+- `src/lib/unlockService.ts` — `canAccessEpisode()` e `unlockEpisode()` com toda a lógica de acesso
+- Edge Function `unlock-episode` — valida saldo, debita carteira, cria unlock no banco com segurança total (nenhum bypass possível pelo frontend)
+- `useEpisodePlayer.ts` — access check via queries Supabase, `hasAccess` boolean, `showPaywall` state, `walletBalance`
+- `PaywallModal` — modal completo com unlock de episódio, unlock de série e recarga de moedas
+- Tabelas `wallets`, `episodes` (com `price_coins`, `is_free`), `episode_unlocks`, `series_unlocks` — todas existentes com RLS
 
-> Importante: "push notifications" nativas de sistema operacional (como as que aparecem mesmo com o app fechado) requerem um Service Worker e a Permission API, o que é complexo e não confiável em todos os navegadores. O que será implementado aqui é **notificação in-app via Supabase Realtime + toast** — que funciona enquanto o usuário está na plataforma — mais um indicador visual de novas notificações não lidas salvas no banco.
+## Gaps reais identificados
+
+### Gap 1 — Redirect silencioso em vez de modal contextual
+Quando `hasAccess === false`, o hook atual faz:
+```ts
+navigate(`/series/${seriesId}`, { replace: true });
+```
+O usuário é expulso da página `/watch/:id` sem ver nenhuma tela de bloqueio. A request pede que o player **não seja carregado** e um modal/tela de bloqueio seja mostrado na própria página.
+
+### Gap 2 — Usuário não logado acessa `/watch/:id` sem proteção
+A rota `/watch/:episodeId` em `App.tsx` **não usa `<ProtectedRoute>`**. Para episódios pagos, um usuário não autenticado chega na página, o access check retorna `false`, e o redirect vai para `/series/:id` (não para `/auth`).
+
+### Gap 3 — Saldo insuficiente vs. conteúdo desbloqueado — mensagem idêntica
+Atualmente não há distinção visual entre "você não desbloqueou este episódio" e "você não tem créditos". Ambos redirectam igual. O pedido quer uma tela dedicada para o caso de saldo zero.
+
+### Gap 4 — Badge de saldo zero no perfil
+Quando `balance === 0`, não há nenhuma indicação visual no header/perfil. O pedido pede um badge de alerta.
+
+### Gap 5 — Regra de negócio: `price_coins <= balance` dá acesso imediato?
+O pedido inclui a regra: _"se `price_coins <= user_wallet.balance` → pode assistir"_. Esta regra significaria que o usuário assiste sem criar um unlock record. **Isso é uma mudança semântica importante**: atualmente o sistema exige unlock explícito (débito de moedas + registro). Essa regra quebraria o histórico de compras e o sistema de monetização. O correto é **manter a regra atual** (precisa desbloquear para assistir), mas melhorar a UX mostrando o modal contextual em vez de redirecionar.
 
 ---
 
-## Banco de dados — 2 novas tabelas
+## O que será implementado
 
-### 1. `series_follows` — quais séries o usuário segue
-```sql
-CREATE TABLE public.series_follows (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  series_id uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (user_id, series_id)
-);
-```
-RLS: SELECT/INSERT/DELETE apenas para o próprio usuário.
+### 1. Tela de bloqueio in-page em `/watch/:id` (mudança principal)
 
-### 2. `notifications` — registro persistente de notificações
-```sql
-CREATE TABLE public.notifications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL,
-  title text NOT NULL,
-  body text NOT NULL,
-  series_id uuid,
-  episode_id uuid,
-  is_read boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-```
-RLS: SELECT/UPDATE/DELETE apenas para o próprio usuário.
+Em vez de redirecionar, quando `hasAccess === false`, mostrar uma tela de bloqueio **dentro da própria página** do player, sem expulsar o usuário.
 
----
+A tela terá dois estados:
+- **Usuário não logado**: mensagem "Faça login para assistir" + botão → `/auth`
+- **Logado sem acesso + saldo suficiente**: mostrar botão "Desbloquear por X moedas" diretamente
+- **Logado sem acesso + saldo insuficiente**: modal "Créditos insuficientes" com custo e botão "Comprar Créditos" → `/wallet`
 
-## Arquitetura da solução
+A alteração acontece em `useEpisodePlayer.ts` (remover o redirect automático) e `EpisodePlayer.tsx` (renderizar tela de bloqueio condicional no lugar do player).
 
-```text
-src/
-├── hooks/
-│   └── useNewEpisodeNotifications.ts   ← Realtime listener + geração de notifs
-├── components/
-│   ├── profile/
-│   │   └── NotificationSettings.tsx    ← Lista de séries seguidas + toggle
-│   └── NotificationBell.tsx            ← Ícone no Navbar com badge de não lidas
-└── pages/
-    └── Profile.tsx                     ← adicionar seção NotificationSettings
-```
+### 2. Proteção da rota `/watch/:id` para não-logados em episódios pagos
 
----
+O access check no hook já retorna `false` para não logados em episódios pagos. A tela de bloqueio in-page lidará com este caso mostrando CTA de login, sem necessidade de tornar a rota protegida globalmente (episódios gratuitos devem continuar acessíveis sem login).
 
-## Funcionalidades detalhadas
+### 3. Badge de saldo zero no `ProfileHeader`
 
-### 1. Seguir/Deixar de seguir séries (NotificationSettings)
-
-- Aparece na página `/me` como nova seção: **"Alertas de Novos Episódios"**
-- Lista as séries que o usuário já assistiu (reaproveitando `watchedSeries` que já existe no Profile)
-- Ao lado de cada série: toggle Switch para ativar/desativar notificação
-- Estado persistido na tabela `series_follows`
-- Botão "Seguir" também aparece na página `/series/:id` (SeriesDetail)
-
-### 2. Listener Realtime (useNewEpisodeNotifications)
-
-Hook que:
-1. Busca quais `series_id` o usuário segue
-2. Abre canal Supabase Realtime escutando `episodes` com filtro `event = INSERT OR UPDATE`
-3. Quando detecta novo episódio `is_published = true` de uma série seguida:
-   - Exibe `toast.success()` com título e link "Assistir agora →"
-   - Insere registro na tabela `notifications` (para histórico persistente)
-4. Hook é montado globalmente em `App.tsx` para funcionar em qualquer página
-
-### 3. Sininho de notificações (NotificationBell)
-
-- Adicionado ao `Navbar` (desktop) e `BottomNav` (mobile)
-- Ícone `Bell` com badge vermelho mostrando contagem de não lidas
-- Clique abre dropdown/popover com lista das últimas 10 notificações
-- Ao abrir: marca como lidas (`is_read = true`)
-- Cada item da lista tem link direto para o episódio
-
----
-
-## Fluxo completo
-
-```
-Admin publica episódio
-       ↓
-Supabase dispara evento Realtime (INSERT/UPDATE em episodes)
-       ↓
-useNewEpisodeNotifications recebe evento
-       ↓
-Verifica se series_id está em series_follows do usuário
-       ↓
-[SIM] → toast.success + INSERT em notifications
-       ↓
-NotificationBell atualiza badge (query invalidation)
-       ↓
-Usuário clica no sininho → vê notificação → clica → assiste
-```
+Quando `balance === 0`, exibir um badge de alerta laranja/destructive ao lado do saldo no header do perfil (`src/components/profile/ProfileHeader.tsx`), com link rápido "Adicionar Créditos" → `/wallet`.
 
 ---
 
 ## Arquivos afetados
 
-| Arquivo | Ação |
+| Arquivo | Mudança |
 |---|---|
-| `supabase/migrations/...` | Criar tabelas `series_follows` e `notifications` com RLS |
-| `src/hooks/useNewEpisodeNotifications.ts` | NOVO — listener Realtime |
-| `src/components/NotificationBell.tsx` | NOVO — sininho com badge no Navbar |
-| `src/components/profile/NotificationSettings.tsx` | NOVO — seção no perfil para gerenciar series seguidas |
-| `src/pages/Profile.tsx` | Adicionar seção `NotificationSettings` |
-| `src/components/Navbar.tsx` | Adicionar `NotificationBell` |
-| `src/components/BottomNav.tsx` | Adicionar sininho com badge |
-| `src/App.tsx` | Montar `useNewEpisodeNotifications` globalmente |
-| `src/pages/SeriesDetail.tsx` | Adicionar botão "Seguir" / "Seguindo" |
+| `src/hooks/useEpisodePlayer.ts` | Remover o `navigate` automático quando `hasAccess === false`; exportar `walletBalance` e `episode.price_coins` |
+| `src/pages/EpisodePlayer.tsx` | Adicionar tela de bloqueio condicional (em vez do redirect silencioso): mostra contexto correto para não-logado, saldo insuficiente ou apenas não desbloqueado |
+| `src/components/profile/ProfileHeader.tsx` | Adicionar badge de alerta quando `balance === 0` e botão rápido "Adicionar Créditos" |
+
+**Sem mudanças de banco de dados** — toda a estrutura já existe.  
+**Sem mudanças na Edge Function** — o backend já é 100% seguro.  
+**Sem mudanças no `PaywallModal`** — já funciona para o desbloqueio normal.
 
 ---
 
-## Limitações e honestidade técnica
+## Comportamento final por cenário
 
-- Notificações só chegam **enquanto o app está aberto** (Supabase Realtime = WebSocket). Para notificações com app fechado seria necessário Web Push API com Service Worker — fora do escopo aqui.
-- O histórico de notificações persiste no banco e aparece no sininho mesmo após recarregar a página.
-- A detecção de "episódio novo publicado" captura tanto `INSERT` quanto `UPDATE` (quando admin marca `is_published = true`), sendo robusta para ambos os fluxos do admin.
+| Cenário | Comportamento atual | Comportamento novo |
+|---|---|---|
+| Episódio gratuito | Acessa normalmente | Igual |
+| Episódio desbloqueado (com unlock) | Acessa normalmente | Igual |
+| Usuário não logado + episódio pago | Redirect para `/series/:id` | Tela de bloqueio: "Faça login para assistir" |
+| Logado + episódio pago + saldo suficiente | Redirect para `/series/:id` + toast "Acesso negado" | Tela de bloqueio: botão "Desbloquear por X moedas" → abre PaywallModal |
+| Logado + episódio pago + saldo = 0 | Redirect para `/series/:id` + toast "Acesso negado" | Tela de bloqueio: "Créditos insuficientes" + botão "Comprar Créditos" → `/wallet` |
+| Acesso direto por URL (bypass) | Redirect para `/series/:id` | Tela de bloqueio (mesma lógica) |
+| Saldo = 0 no perfil | Sem indicação visual | Badge laranja de alerta no `ProfileHeader` |
