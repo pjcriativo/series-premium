@@ -19,7 +19,7 @@ const EpisodePlayer = () => {
   const {
     episode, epLoading, accessLoading,
     savedProgress,
-    videoRef, videoUrl, youtubeId,
+    videoRef, videoUrl, videoUrlLoading, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
     nextEpisode, isNextAccessible, walletBalance,
@@ -85,7 +85,8 @@ const EpisodePlayer = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [youtubeId]);
 
-  const isLoading = epLoading || accessLoading;
+  const isLoading = epLoading || accessLoading ||
+    (!youtubeId && !!episode?.video_url && videoUrlLoading);
 
   if (isLoading) {
     return (
@@ -153,7 +154,7 @@ const EpisodePlayer = () => {
               ) : videoUrl ? (
                 <>
                   <video
-                    key={episode?.id}
+                    key={`${episode?.id}-${videoUrl}`}
                     ref={videoRef}
                     src={videoUrl}
                     className="h-full w-full object-contain"

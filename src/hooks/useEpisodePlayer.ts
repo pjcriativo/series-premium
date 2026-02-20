@@ -92,7 +92,7 @@ export const useEpisodePlayer = () => {
   })();
 
   // Video signed URL (skip if YouTube)
-  const { data: videoUrl } = useQuery({
+  const { data: videoUrl, isLoading: videoUrlLoading } = useQuery({
     queryKey: ["video-url", episode?.video_url],
     queryFn: async () => {
       if (!episode?.video_url) return null;
@@ -353,7 +353,7 @@ export const useEpisodePlayer = () => {
   return {
     episode, epLoading, accessLoading, hasAccess,
     savedProgress,
-    videoRef, videoUrl, youtubeId,
+    videoRef, videoUrl, videoUrlLoading, youtubeId,
     isPlaying, setIsPlaying, isMuted, currentTime, duration, setDuration,
     showEndScreen, showPaywall, setShowPaywall, autoUnlocking,
     nextEpisode, isNextAccessible, walletBalance,
