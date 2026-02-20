@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 const EpisodePlayer = () => {
   const {
+    episodeId,
     episode, epLoading, accessLoading,
     savedProgress,
     videoRef, videoUrl, videoUrlLoading, youtubeId,
@@ -34,12 +35,10 @@ const EpisodePlayer = () => {
   const { likeCount, favoriteCount, hasLiked, hasFavorited, toggleLike, toggleFavorite, handleShare } = useEpisodeSocial(episode?.id);
 
   const [paywallEpisode, setPaywallEpisode] = useState<{ id: string; title: string; episode_number: number; price_coins: number } | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
   const ytContainerRef = useRef<HTMLDivElement>(null);
 
   const navigateWithTransition = useCallback((path: string) => {
-    setIsTransitioning(true);
-    setTimeout(() => navigate(path), 200);
+    navigate(path);
   }, [navigate]);
 
   // YouTube IFrame API setup
@@ -88,6 +87,18 @@ const EpisodePlayer = () => {
         document.head.appendChild(tag);
       }
     }
+
+    // Cleanup: destroy old player to prevent postMessage errors on episode switch
+    return () => {
+      try {
+        if (ytContainerRef.current) {
+          ytContainerRef.current.innerHTML = "";
+        }
+        onYTPlayerReady(null);
+      } catch {
+        // ignore cleanup errors
+      }
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [youtubeId]);
 
@@ -135,7 +146,7 @@ const EpisodePlayer = () => {
     <div className="min-h-screen bg-background">
       <Navbar />
 
-      <main className={cn("pt-48 px-4 lg:px-8 pb-20 md:pb-8", isTransitioning ? "animate-fade-out" : "animate-fade-in")}>
+      <main className={cn("pt-48 px-4 lg:px-8 pb-20 md:pb-8 animate-fade-in")}>
         <div className="flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto lg:items-start">
           {/* Left column - Vertical Video */}
           <div className="lg:w-[55%] flex justify-center lg:justify-end">
@@ -151,11 +162,9 @@ const EpisodePlayer = () => {
                 <ChevronLeft className="h-3.5 w-3.5" />
                 Todos os episódios
               </Link>
-              {isTransitioning ? (
-                <Skeleton className="w-full h-full rounded-none" />
-              ) : youtubeId ? (
+              {youtubeId ? (
                 <div
-                  key={youtubeId}
+                  key={episodeId}
                   ref={ytContainerRef}
                   className="w-full h-full"
                 />

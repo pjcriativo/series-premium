@@ -346,11 +346,15 @@ export const useEpisodePlayer = () => {
     return `${m}:${sec.toString().padStart(2, "0")}`;
   };
 
-  const onYTPlayerReady = (player: any) => {
+  const onYTPlayerReady = (player: any | null) => {
+    if (ytPlayerRef.current && player === null) {
+      try { ytPlayerRef.current.destroy?.(); } catch { /* ignore */ }
+    }
     ytPlayerRef.current = player;
   };
 
   return {
+    episodeId,
     episode, epLoading, accessLoading, hasAccess,
     savedProgress,
     videoRef, videoUrl, videoUrlLoading, youtubeId,
