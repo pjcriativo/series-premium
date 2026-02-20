@@ -1,104 +1,123 @@
 
-# Correção do Perfil e Bloqueio de Compra sem Pagamento
+# Melhorias na Página de Perfil /me e Card do Navbar
 
-## Diagnóstico dos Problemas
+## Diagnóstico dos Problemas Identificados
 
-### Problema 1 — Card de perfil no Navbar sem link para o perfil completo
+### Problema 1 — Card do Navbar: email saindo para fora
+Na imagem enviada, o email longo (`servosnabatalha@gmail.com`) fica cortado e transbordando o card do HoverCard. A causa é que o container `flex items-center gap-2` não tem `min-w-0` e o texto de nome/email não tem `truncate`. O card tem `w-60` mas o conteúdo interno não respeita esse limite.
 
-O HoverCard do avatar no `Navbar.tsx` mostra email + saldo com dois botões:
-- "Completar" → redireciona para `/wallet` (loja de moedas), não para o perfil
-- "Sair" → logout
+### Problema 2 — Avatar do Navbar sem foto real
+O avatar no HoverCard usa apenas `AvatarFallback` (inicial), mesmo quando o usuário tem `avatar_url` no banco. O componente `Avatar` do Navbar importa só `AvatarFallback`, sem `AvatarImage`.
 
-Não existe nenhum botão/link "Ver Perfil" apontando para `/me`. O usuário clica no avatar esperando ir ao perfil e vai parar na loja de moedas, ou a tela parece vazia porque a rota `/profile` não existe (a rota correta é `/me`).
-
-### Problema 2 — Compra de moedas sem pagamento real
-
-A Edge Function `buy-coins/index.ts` na rota de compra normal:
-1. Recebe `package_id`
-2. Busca o pacote no banco
-3. **Imediatamente credita as moedas na carteira**
-4. Registra transação com `reason: "purchase"`
-
-Não há nenhuma validação de pagamento (Stripe, PIX, etc.). Qualquer clique em "Comprar" adiciona moedas gratuitamente. Isso é uma falha crítica de monetização.
-
-O usuário mencionou que **Stripe será adicionado depois**. Portanto, a solução correta agora é **bloquear a compra** e mostrar uma tela de "Em breve" ao invés de processar o pagamento falso.
+### Problema 3 — Perfil /me: funcionalidades faltando
+Conforme solicitado, adicionar:
+- **Badge "Membro desde"** com data de criação da conta
+- **Histórico de episódios assistidos** (via `episode_unlocks` + join com `episodes` e `series`)
+- O avatar com upload e a bio já existem no `EditProfileForm` — mas o `ProfileHeader` não mostra o avatar atualizado em tempo real; garantir que após salvar o avatar aparece
 
 ---
 
-## O que será corrigido
+## O que será implementado
 
-### Fix 1 — Navbar HoverCard: adicionar link "Meu Perfil"
+### Fix 1 — Navbar HoverCard: corrigir overflow do email
 
-Em `src/components/Navbar.tsx`, adicionar um botão "Meu Perfil" no HoverCard que leva para `/me`, posicionado antes de "Completar".
+**Arquivo:** `src/components/Navbar.tsx`
 
-### Fix 2 — Bloquear compra de moedas sem pagamento
+- Adicionar `min-w-0` ao container `div` interno do avatar + texto
+- Adicionar `truncate` e `max-w-full` ao `<span>` do email/nome
+- Importar `AvatarImage` e exibir o avatar real quando o usuário tem foto (`profile?.avatar_url`)
+- Aumentar largura do card de `w-60` para `w-64` para dar mais espaço
 
-**Estratégia:** Como o Stripe ainda será integrado, a abordagem é substituir a ação de compra por um modal/estado de "Em breve — pagamento via Stripe em configuração". O botão "Comprar" nos dois lugares onde aparece:
-
-- `src/components/profile/CreditPackages.tsx` (no perfil `/me`)
-- `src/pages/CoinStore.tsx` (na loja `/wallet`)
-
-...não irá mais chamar a Edge Function `buy-coins`. Em vez disso, mostrará um modal com:
-
-```
-Pagamento em breve
-O sistema de pagamento está sendo configurado.
-Em breve você poderá comprar moedas com Stripe, PIX e cartão de crédito.
+**Antes:**
+```tsx
+<div className="flex flex-col">
+  <span className="text-sm font-bold text-foreground leading-tight">{displayName}</span>
+  {uid && <span className="text-[10px] text-muted-foreground leading-tight">UID {uid}</span>}
+</div>
 ```
 
-**A Edge Function `buy-coins` permanece intacta** (será conectada ao Stripe depois), mas o frontend deixa de chamá-la para compras normais de usuários. O fluxo de admin_grant (crédito administrativo) continua funcionando normalmente.
+**Depois:**
+```tsx
+<div className="flex flex-col min-w-0">
+  <span className="text-sm font-bold text-foreground leading-tight truncate max-w-[140px]">{displayName}</span>
+  {uid && <span className="text-[10px] text-muted-foreground leading-tight truncate">UID {uid}</span>}
+</div>
+```
 
-### Fix 3 — Rota "Completar" no Navbar
+### Fix 2 — Badge "Membro desde" no ProfileHeader
 
-O botão "Completar" no HoverCard do Navbar atualmente aponta para `/wallet`. Isso será mantido pois a loja terá o aviso "Em breve". Mas será adicionado também o botão de perfil para clareza.
+**Arquivo:** `src/components/profile/ProfileHeader.tsx`
+
+Adicionar uma nova prop `memberSince: string | null` e exibir abaixo do email:
+
+```
+Membro desde abril de 2024
+```
+
+Formatado com `date-fns` (já instalado) em português. O `profiles.created_at` já existe no banco.
+
+### Fix 3 — Histórico de Episódios Desbloqueados no Perfil
+
+**Arquivo:** `src/pages/Profile.tsx`
+
+Adicionar uma nova query que busca `episode_unlocks` com join em `episodes` (título, número, série_id) e `series` (título, cover_url). Exibir como uma seção "Episódios Desbloqueados" com cards horizontais scrolláveis — padrão visual idêntico ao "Continuar Assistindo" já existente.
+
+A query é:
+```ts
+supabase
+  .from("episode_unlocks")
+  .select("unlocked_at, episode:episodes(id, title, episode_number, series_id, series:series(id, title, cover_url))")
+  .order("unlocked_at", { ascending: false })
+  .limit(20)
+```
+
+Cada card mostra: capa da série, badge "Ep. N", título da série, data de desbloqueio. Ao clicar, navega para `/watch/:episodeId`.
+
+### Fix 4 — "Membro desde" vindo do perfil estendido
+
+**Arquivo:** `src/pages/Profile.tsx`
+
+Incluir `created_at` na query do `ext-profile`:
+```ts
+.select("id, display_name, avatar_url, auto_unlock, phone, bio, created_at")
+```
+
+Passar `memberSince={extProfile?.created_at ?? null}` para o `ProfileHeader`.
 
 ---
 
-## Arquivos a modificar
+## Arquivos afetados
 
 | Arquivo | Mudança |
 |---|---|
-| `src/components/Navbar.tsx` | Adicionar link "Meu Perfil" no HoverCard antes do botão "Completar" |
-| `src/components/profile/CreditPackages.tsx` | Substituir chamada à Edge Function por modal "Pagamento em breve" |
-| `src/pages/CoinStore.tsx` | Substituir chamada à Edge Function por modal "Pagamento em breve" |
+| `src/components/Navbar.tsx` | Corrigir overflow do email com `truncate` + `min-w-0`; adicionar `AvatarImage` com foto real |
+| `src/components/profile/ProfileHeader.tsx` | Adicionar prop `memberSince` com badge formatado "Membro desde" |
+| `src/pages/Profile.tsx` | Incluir `created_at` na query do perfil; passar `memberSince` para `ProfileHeader`; adicionar seção "Episódios Desbloqueados" |
+
+**Sem mudanças de banco** — `profiles.created_at` e `episode_unlocks` já existem.  
+**Sem novas dependências** — `date-fns` já está instalado.
 
 ---
 
-## UX do modal "Pagamento em breve"
-
-Ao clicar em "Comprar" em qualquer pacote, em vez de processar:
+## UX Final
 
 ```
-[Ícone de cadeado ou cartão]
-Pagamento em breve
+[Avatar 96px]
+Nome do Usuário
+email@exemplo.com
+Membro desde fevereiro de 2026        ← NOVO badge
 
-O sistema de compra de moedas está em configuração.
-Em breve você poderá comprar com:
-• Cartão de crédito via Stripe
-• PIX
-• Google Pay
+[200 moedas]  [Comprar Créditos]
 
-Aguarde a liberação!
+─── Episódios Desbloqueados ───       ← NOVA seção
+[card] [card] [card] → scroll horizontal
 
-[Fechar]
+─── Continuar Assistindo ───          (existente)
+...
 ```
 
-Implementado como um `Dialog` do Radix UI já disponível no projeto — sem dependências novas.
-
----
-
-## O que NÃO será alterado
-
-- A Edge Function `buy-coins` — permanece para quando o Stripe for integrado
-- O fluxo de `admin_grant` — admins continuam podendo creditar manualmente
-- O banco de dados — nenhuma mudança de schema necessária
-- A lógica de desbloqueio de episódios — permanece igual
-- A rota `/me` e o perfil completo — continuam funcionando
-
----
-
-## Notas técnicas
-
-- O HoverCard do Navbar já existe com Radix UI — sem alteração estrutural
-- O Dialog de "Em breve" usa o componente `src/components/ui/dialog.tsx` já existente
-- Quando o Stripe for integrado, bastará remover o modal de bloqueio e reconectar `handleBuy` à Edge Function com o checkout do Stripe
+E no card do Navbar:
+```
+[S] servosnabatalha@gm... ← truncado
+    UID fe96678b...
+```
