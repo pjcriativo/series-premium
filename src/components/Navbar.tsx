@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import { Coins, ShieldCheck, LogOut } from "lucide-react";
+import { Coins, ShieldCheck, LogOut, User } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -114,10 +114,16 @@ const Navbar = () => {
                     </div>
                   </div>
 
-                  {/* CTA button */}
-                  <Link to="/wallet" className="block">
+                  {/* CTA buttons */}
+                  <Link to="/me" className="block">
+                    <Button variant="outline" className="w-full h-9 text-sm font-bold gap-1.5">
+                      <User className="h-4 w-4" />
+                      Meu Perfil
+                    </Button>
+                  </Link>
+                  <Link to="/wallet" className="block mt-2">
                     <Button className="w-full h-9 text-sm font-bold">
-                      Completar
+                      Adicionar Moedas
                     </Button>
                   </Link>
 
