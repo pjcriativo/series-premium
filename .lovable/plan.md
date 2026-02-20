@@ -1,97 +1,94 @@
 
-# Aprimorar Página de Perfil /me com Edição Completa e Integração de Carteira
+# Página /purchases — Conteúdo Desbloqueado do Usuário
 
-## Análise do que já existe
+## O que existe hoje
 
-O projeto já tem uma base sólida. A rota `/me` existe e usa `ProtectedRoute`. Há tabelas reais no Supabase: `profiles`, `wallets`, `transactions`. A loja de moedas (`CoinStore.tsx`) já funciona com a edge function `buy-coins`. O histórico de transações já é exibido.
+A rota `/purchases` já existe em `App.tsx` (protegida por `ProtectedRoute`) e aponta para `src/pages/Purchases.tsx`. Porém, essa página atualmente exibe apenas o **histórico de transações de moedas** — não o conteúdo desbloqueado.
 
-**O que está faltando:**
-- Campos `phone` e `bio` na tabela `profiles`
-- Formulário para editar o perfil (nome, telefone, bio)
-- Upload de avatar via Supabase Storage
-- Visual mais completo e moderno para a página /me
-- Skeleton loading enquanto os dados carregam
+As tabelas relevantes no banco são:
+- `episode_unlocks` — `{ id, user_id, episode_id, unlocked_at }`
+- `series_unlocks` — `{ id, user_id, series_id, unlocked_at }`
+- `episodes` — `{ id, title, episode_number, series_id, ... }`
+- `series` — `{ id, title, cover_url, ... }`
 
-## Estrutura do banco de dados — alteração necessária
+O Supabase suporta **foreign key joins** via `.select()`, então é possível buscar os dados relacionados em uma única query.
 
-A tabela `profiles` precisa de 2 novos campos:
+---
 
-```sql
-ALTER TABLE public.profiles
-  ADD COLUMN IF NOT EXISTS phone text,
-  ADD COLUMN IF NOT EXISTS bio text;
+## Estratégia de dados
+
+**Episódios desbloqueados:** buscar `episode_unlocks` com join em `episodes(id, title, episode_number, series_id, series:series_id(id, title, cover_url))`
+
+**Séries desbloqueadas:** buscar `series_unlocks` com join em `series(id, title, cover_url)`
+
+Ambos ordenados por `unlocked_at` desc.
+
+Os dois resultados serão **mesclados em uma lista unificada** e reordenados por data — assim o usuário vê tudo em ordem cronológica inversa.
+
+---
+
+## O que será alterado
+
+### `src/pages/Purchases.tsx` — reescrita completa
+
+A página atual (histórico de transações) será **substituída** pela nova página de conteúdo desbloqueado. O histórico de transações já existe na página `/me` (componente `TransactionHistory`), então não se perde nada.
+
+A nova estrutura:
+
+```
+/purchases
+├── Header com botão "Voltar para /me"
+├── Tabs: "Episódios" | "Séries" (ou lista unificada)
+└── Cards com capa, título, tipo e botão Assistir/Ver série
 ```
 
-Não são necessárias novas tabelas — `wallets` e `transactions` já existem e funcionam.
+### Layout dos cards
 
-## Arquitetura da solução
+Cada item desbloqueado exibe:
+- Capa da série/episódio (usando `getSeriesCover` para fallback)
+- Badge de tipo: "Episódio" (roxo) ou "Série completa" (dourado)
+- Título da série e, para episódios, "Ep. N — Título do episódio"
+- Data de desbloqueio formatada em pt-BR
+- Botão "Assistir" → `/watch/{episodeId}` ou, para séries, "Ver série" → `/series/{seriesId}`
 
-A página `/me` será reformulada em uma estrutura de componentes separados:
+### Skeletons e estados vazios
 
-```text
-src/
-├── pages/
-│   └── Profile.tsx              ← reformulado como orquestrador
-└── components/
-    └── profile/
-        ├── ProfileHeader.tsx    ← avatar, nome, email, saldo
-        ├── EditProfileForm.tsx  ← form com nome, telefone, bio, avatar
-        ├── WalletCard.tsx       ← saldo atual + botão para loja
-        ├── CreditPackages.tsx   ← 3 pacotes com compra simulada
-        └── TransactionHistory.tsx ← tabela de histórico
+- Skeleton loading com 6 cards fantasmas enquanto carrega
+- Se não houver nada desbloqueado: ilustração + mensagem "Você ainda não desbloqueou nenhum conteúdo" + botão "Explorar séries" → `/`
+
+---
+
+## Technical details
+
+**Queries Supabase (dados do próprio usuário — RLS já garante segurança):**
+
+```ts
+// Episódios desbloqueados com dados do episódio e série
+supabase
+  .from("episode_unlocks")
+  .select("id, unlocked_at, episodes:episode_id(id, title, episode_number, series_id, series:series_id(id, title, cover_url))")
+  .eq("user_id", user.id)
+  .order("unlocked_at", { ascending: false })
+
+// Séries desbloqueadas com dados da série
+supabase
+  .from("series_unlocks")
+  .select("id, unlocked_at, series:series_id(id, title, cover_url)")
+  .eq("user_id", user.id)
+  .order("unlocked_at", { ascending: false })
 ```
 
-## O que será implementado
+**Merge e ordenação:**
+Os dois arrays são unidos em uma lista tipada e reordenados por `unlocked_at` decrescente, usando `sort()` simples no frontend.
 
-### 1. Migração de banco de dados
-Adicionar `phone` (text, nullable) e `bio` (text, nullable) à tabela `profiles`. Os campos existentes e os dados atuais não são afetados.
+**Sem alteração de banco de dados** — todas as tabelas e RLS já existem e funcionam corretamente.
 
-### 2. ProfileHeader.tsx
-- Avatar circular com inicial do nome como fallback
-- Nome completo e email (somente leitura)
-- Saldo atual de moedas exibido com badge
-- Botão "Comprar Créditos" que abre o modal/scroll para pacotes
+---
 
-### 3. EditProfileForm.tsx
-- Campos: Nome completo, Telefone, Bio (textarea)
-- Upload de avatar: selecionar imagem → enviar para `covers` bucket no Storage → salvar URL em `profiles.avatar_url`
-- Validação: nome obrigatório, telefone max 20 chars, bio max 300 chars
-- Estado de loading durante salvamento
-- Toast de sucesso ou erro
+## Arquivo afetado
 
-### 4. WalletCard.tsx
-- Card com saldo atual e data da última atualização
-- Botão "Adicionar Créditos" que abre seção de pacotes
+| Arquivo | Ação |
+|---|---|
+| `src/pages/Purchases.tsx` | Reescrita completa com nova lógica e UI |
 
-### 5. CreditPackages.tsx
-- 3 pacotes fixos criados na loja: 50, 120 e 300 créditos (lidos do Supabase `coin_packages`)
-- Clicar em "Comprar" chama a edge function `buy-coins` existente
-- Invalida query de wallet ao completar
-- Toast de sucesso
-
-### 6. TransactionHistory.tsx
-- Lista das últimas 20 transações ordenadas por `created_at DESC`
-- Ícone verde para crédito, vermelho para débito
-- Razão traduzida para português
-- Mensagem amigável quando não há transações
-- Skeleton loading enquanto carrega
-
-### 7. Profile.tsx reformulado
-- Carrega todos os dados em paralelo com `useQuery`
-- Exibe skeleton loading enquanto qualquer dado essencial está carregando
-- Nunca deixa spinner infinito (try/catch/finally em todos os fetches)
-- Mantém: toggle de auto-desbloqueio, "Continuar Assistindo", "Séries Assistidas", botão de Sair e link Admin
-
-## Segurança
-- Todos os updates de `profiles` usam `eq("id", user.id)` — RLS do Supabase garante que só o próprio usuário pode atualizar
-- O saldo nunca é alterado diretamente pelo frontend — toda compra passa pela edge function `buy-coins` existente
-- Upload de avatar é feito no bucket `covers` (já público) com path `avatars/{user_id}/{filename}` para isolar por usuário
-
-## Arquivos afetados
-1. **NOVO** `src/components/profile/ProfileHeader.tsx`
-2. **NOVO** `src/components/profile/EditProfileForm.tsx`
-3. **NOVO** `src/components/profile/WalletCard.tsx`
-4. **NOVO** `src/components/profile/CreditPackages.tsx`
-5. **NOVO** `src/components/profile/TransactionHistory.tsx`
-6. **MODIFICADO** `src/pages/Profile.tsx` — reformulado para usar os novos componentes
-7. **MIGRAÇÃO** — adicionar `phone` e `bio` à tabela `profiles`
+Nenhuma migração de banco necessária. Nenhum outro arquivo precisa ser modificado.
